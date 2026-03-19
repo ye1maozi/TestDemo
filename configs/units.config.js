@@ -1,9 +1,19 @@
+import { getUnitPixelArt } from "../code/pixelArt.js";
+
+// 单位图片：优先本地图；否则使用程序生成的像素画占位
+function unitImage(id, icon, tint = "#7fc7ff") {
+  const base = typeof window !== "undefined" && window.__BASE__ ? window.__BASE__ : "";
+  if (base) return `${base}assets/units/${id}.png`;
+  return getUnitPixelArt(id, tint) || `https://placehold.co/80x80/1a2a4a/7fc7ff?text=${encodeURIComponent(icon)}`;
+}
+
 export const UNIT_CONFIG = [
   {
     id: "u_guard",
     name: "铁卫",
     icon: "🛡️",
     sprite: "🛡️",
+    image: unitImage("u_guard", "🛡️", "#6ea9ff"),
     tint: "#6ea9ff",
     tier: 1,
     role: "frontline",
@@ -16,6 +26,7 @@ export const UNIT_CONFIG = [
     name: "巡林射手",
     icon: "🏹",
     sprite: "🏹",
+    image: unitImage("u_archer", "🏹", "#7be2a5"),
     tint: "#7be2a5",
     tier: 1,
     role: "backline",
@@ -28,6 +39,7 @@ export const UNIT_CONFIG = [
     name: "齿轮术士",
     icon: "⚙️",
     sprite: "⚙️",
+    image: unitImage("u_mech", "⚙️", "#f6d56f"),
     tint: "#f6d56f",
     tier: 2,
     role: "backline",
@@ -40,6 +52,7 @@ export const UNIT_CONFIG = [
     name: "灰烬武僧",
     icon: "🥋",
     sprite: "🥋",
+    image: unitImage("u_monk", "🥋", "#ff9d7a"),
     tint: "#ff9d7a",
     tier: 2,
     role: "midline",
@@ -52,6 +65,7 @@ export const UNIT_CONFIG = [
     name: "虚空术师",
     icon: "🔮",
     sprite: "🔮",
+    image: unitImage("u_mage", "🔮", "#ca95ff"),
     tint: "#ca95ff",
     tier: 3,
     role: "backline",
@@ -64,6 +78,7 @@ export const UNIT_CONFIG = [
     name: "暮色骑士",
     icon: "🗡️",
     sprite: "🗡️",
+    image: unitImage("u_knight", "🗡️", "#8dd1ff"),
     tint: "#8dd1ff",
     tier: 3,
     role: "frontline",
@@ -76,6 +91,7 @@ export const UNIT_CONFIG = [
     name: "影缝者",
     icon: "🕶️",
     sprite: "🕶️",
+    image: unitImage("u_assassin", "🕶️", "#b9c0d5"),
     tint: "#b9c0d5",
     tier: 4,
     role: "backline",
@@ -88,6 +104,7 @@ export const UNIT_CONFIG = [
     name: "巨像",
     icon: "🧱",
     sprite: "🧱",
+    image: unitImage("u_titan", "🧱", "#ffc178"),
     tint: "#ffc178",
     tier: 4,
     role: "frontline",

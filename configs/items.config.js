@@ -1,9 +1,18 @@
+import { getItemPixelArt } from "../code/pixelArt.js";
+
+function itemImage(id, icon, tint = "#8b9dc3") {
+  const base = typeof window !== "undefined" && window.__BASE__ ? window.__BASE__ : "";
+  if (base) return `${base}assets/items/${id}.png`;
+  return getItemPixelArt(id, tint) || `https://placehold.co/64x64/1a2a4a/8b9dc3?text=${encodeURIComponent(icon)}`;
+}
+
 export const ITEM_CONFIG = [
   {
     id: "i_powder",
     name: "火药包",
     icon: "🧨",
     tileIcon: "🧨",
+    image: itemImage("i_powder", "🧨", "#d26b5f"),
     tint: "#d26b5f",
     rarity: "common",
     shape: [
@@ -22,6 +31,7 @@ export const ITEM_CONFIG = [
     name: "稳压核心",
     icon: "🔋",
     tileIcon: "🔋",
+    image: itemImage("i_core", "🔋", "#6aa8ff"),
     tint: "#6aa8ff",
     rarity: "rare",
     shape: [
@@ -40,6 +50,7 @@ export const ITEM_CONFIG = [
     name: "夜幕披风",
     icon: "🧥",
     tileIcon: "🧥",
+    image: itemImage("i_cloak", "🧥", "#8f78d9"),
     tint: "#8f78d9",
     rarity: "common",
     shape: [
@@ -57,6 +68,7 @@ export const ITEM_CONFIG = [
     name: "先锋纹章",
     icon: "🪙",
     tileIcon: "🪙",
+    image: itemImage("i_emblem", "🪙", "#e3b860"),
     tint: "#e3b860",
     rarity: "epic",
     shape: [[1]],
@@ -71,6 +83,7 @@ export const ITEM_CONFIG = [
     name: "战地急救包",
     icon: "🩹",
     tileIcon: "🩹",
+    image: itemImage("i_medkit", "🩹", "#6fd8ac"),
     tint: "#6fd8ac",
     rarity: "common",
     shape: [[1, 1, 1]],

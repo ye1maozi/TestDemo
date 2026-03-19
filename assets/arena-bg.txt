@@ -1,0 +1,3 @@
+将战场/塔楼背景图命名为 arena-bg.jpg 放在本目录，并在 code/styles.css 中
+将 .arena-visual 的 background-image 改为: url("../assets/arena-bg.jpg")
+建议尺寸：宽度 ≥ 800px，高度 ≥ 400px，横图更佳。

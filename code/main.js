@@ -71,7 +71,9 @@ function bootstrap() {
     },
     onToggleBattleSpeed: () => {
       if (!state.battleOverlay.visible) return;
-      state.battleOverlay.speed = state.battleOverlay.speed === 2 ? 1 : 2;
+      const speeds = [0.5, 1, 2];
+  const idx = speeds.indexOf(state.battleOverlay.speed ?? 1);
+  state.battleOverlay.speed = speeds[(idx + 1) % speeds.length];
       render(state);
     },
     onReplayBattle: async () => {
@@ -567,7 +569,8 @@ async function playBattleOverlayTimeline(forceRestart = false) {
     if (typeof full[i].enemyHp === "number") state.battleOverlay.enemyHp = Math.max(0, Math.min(100, full[i].enemyHp));
     render(state);
     const speed = state.battleOverlay.speed || 1;
-    await sleep(Math.max(80, Math.round(220 / speed)));
+    const stepMs = Math.max(500, Math.round(1200 / speed));
+    await sleep(stepMs);
   }
   state.battleOverlay.playing = false;
 }
@@ -601,6 +604,7 @@ function buildArenaFromState(mode) {
   const playerUnits = base.map((u, idx) => ({
     id: `p_${u.instanceId || idx}`,
     sprite: u.sprite || u.icon || "⚔️",
+    image: u.image || null,
     hp: 100,
     maxHp: 100,
   }));

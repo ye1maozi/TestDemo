@@ -1,4 +1,5 @@
 import { GAME_CONFIG } from "../configs/game.config.js";
+import { getNodePixelArt } from "./pixelArt.js";
 import { getCurrentPhase } from "./state.js";
 
 function el(id) {
@@ -149,14 +150,13 @@ function renderSideTabs(state) {
 function renderStatus(state) {
   const phase = getCurrentPhase(state);
   const html = `
-    <div><span class="tag">RunID</span>${state.runId || "-"}</div>
-    <div><span class="tag">楼层</span>${state.floor}/${GAME_CONFIG.finalFloor}</div>
-    <div><span class="tag">阶段</span>${phase.manual ? `${phase.label}（手动结束）` : phase.label}</div>
-    <div><span class="tag">生命值</span>${state.hp}</div>
+    <div><span class="tag">Run</span>${(state.runId || "-").slice(-6)}</div>
+    <div><span class="tag">层</span>${state.floor}/${GAME_CONFIG.finalFloor}</div>
+    <div><span class="tag">阶段</span>${phase.label}</div>
+    <div><span class="tag">❤</span>${state.hp}</div>
     <div><span class="tag">徽记</span>${state.lifeBadge}</div>
-    <div><span class="tag">金币</span>${state.gold}</div>
-    <div><span class="tag">连胜/败</span>${state.streak}</div>
-    <div><span class="tag">存活估计</span>${state.mockAliveCount}</div>
+    <div><span class="tag">💰</span>${state.gold}</div>
+    <div><span class="tag">存活</span>${state.mockAliveCount}</div>
   `;
   el("runStatus").innerHTML = html;
 }
@@ -181,12 +181,12 @@ function renderHud(state) {
 
 function renderTowerRoute(state) {
   const map = {
-    combat: { icon: "⚔️", text: "战斗" },
-    elite: { icon: "💀", text: "精英" },
-    event: { icon: "❓", text: "事件" },
-    shop: { icon: "🛒", text: "商店" },
-    rest: { icon: "🔥", text: "营地" },
-    boss: { icon: "👑", text: "层主" },
+    combat: { icon: "⚔️", text: "战斗", color: "2a4a6a" },
+    elite: { icon: "💀", text: "精英", color: "5a2a3a" },
+    event: { icon: "❓", text: "事件", color: "4a4a6a" },
+    shop: { icon: "🛒", text: "商店", color: "3a5a4a" },
+    rest: { icon: "🔥", text: "营地", color: "6a3a2a" },
+    boss: { icon: "👑", text: "层主", color: "5a4a2a" },
   };
   const route = state.tower?.route || [];
   if (!route.length) {
@@ -197,19 +197,20 @@ function renderTowerRoute(state) {
     .map((layer, idx) => {
       const layerNodes = (layer || [])
         .map((node, nodeIdx) => {
-          const meta = map[node] || { icon: "•", text: node };
+          const meta = map[node] || { icon: "•", text: node, color: "3a4a5a" };
           const isDone = idx < state.tower.step;
           const isCurrent = idx === state.tower.step;
           const isPicked = isCurrent && nodeIdx === (state.tower.selectedNode || 0);
           const cls = `route-node ${isDone ? "done" : ""} ${isCurrent ? "current" : ""} ${isPicked ? "picked" : ""}`.trim();
           const disabled = isCurrent ? "" : "disabled";
-          return `<button class="${cls} has-tip" ${disabled} data-select-node-index="${nodeIdx}" data-tip="节点：${meta.text}\n第${idx + 1}步可选分支">${meta.icon} ${meta.text}</button>`;
+          const nodeImg = getNodePixelArt(node) || `https://placehold.co/40x40/${meta.color || "2a3a4a"}/8b9dc3?text=${encodeURIComponent(meta.icon)}`;
+          return `<button class="${cls} has-tip" ${disabled} data-select-node-index="${nodeIdx}" data-tip="节点：${meta.text}\n第${idx + 1}步可选分支"><img class="route-node-img" src="${nodeImg}" alt=""><span class="route-node-text">${meta.text}</span></button>`;
         })
         .join("");
       return `<div class="tower-layer">${layerNodes}</div>`;
     })
     .join("");
-  const history = (state.tower.history || []).map((n) => map[n]?.text || n).join(" -> ");
+  const history = (state.tower.history || []).map((n) => map[n]?.text || n).join(" → ");
   el("towerRoute").innerHTML = `<div class="tower-route">${html}</div><div class="muted">已走：${history || "尚未推进"}</div>`;
 }
 
@@ -234,17 +235,18 @@ function renderActionHints(state) {
   el("strategyStableBtn").disabled = !canPickStrategy;
   el("strategyGreedyBtn").disabled = !canPickStrategy;
 
-  const strategyText = state.floorPlan.strategy === "greedy" ? "先事件 -> 买输出单位 -> 整理背包 -> 探索" : "先买前排 -> 探索稳血 -> 再事件补收益";
-  el("floorSuggestion").textContent = `当前选中节点：${currentNode} ｜ 本层建议动作序列：${state.floorPlan.suggestion || strategyText}`;
+  const strategyText = state.floorPlan.strategy === "greedy" ? "事件→买输出→整理→探索" : "买前排→探索→事件";
+  el("floorSuggestion").textContent = `节点：${currentNode} ｜ ${state.floorPlan.suggestion || strategyText}`;
   const previewMap = {
-    combat: "普通战斗：收益稳定，风险中等",
-    elite: "精英战：收益更高，伤害风险更高",
-    boss: "层主战：高风险高收益，建议满编再打",
-    event: "事件节点：随机收益，波动大",
-    shop: "商店节点：补牌补装，提升构筑完整度",
-    rest: "营地节点：回血与止损窗口",
+    combat: "普通战斗",
+    elite: "精英战",
+    boss: "层主战",
+    event: "事件",
+    shop: "商店",
+    rest: "营地",
   };
-  el("nodePreview").innerHTML = `<strong>节点预览</strong><br/>${previewMap[currentNode] || "未知节点"}`;
+  const nodeEl = el("nodePreview");
+  if (nodeEl) nodeEl.textContent = previewMap[currentNode] || "未知";
 
   el("exploreBtn").classList.add("has-tip");
   el("eventBtn").classList.add("has-tip");
@@ -260,6 +262,24 @@ function renderActionHints(state) {
   );
 }
 
+function unitVisual(unit, opts = {}) {
+  const imgCls = opts.imgClass || "unit-img";
+  const fallback = unit?.sprite || unit?.icon || "⚔️";
+  if (unit?.image) {
+    return `<span class="unit-visual-wrap"><img class="${imgCls}" src="${unit.image}" alt="${unit?.name || ""}" loading="lazy" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='inline'"><span class="unit-sprite unit-fallback" style="display:none">${fallback}</span></span>`;
+  }
+  return `<span class="unit-sprite">${fallback}</span>`;
+}
+
+function itemVisual(item, opts = {}) {
+  const imgCls = opts.imgClass || "item-img";
+  const fallback = item?.icon || item?.tileIcon || "📦";
+  if (item?.image) {
+    return `<span class="item-visual-wrap"><img class="${imgCls}" src="${item.image}" alt="${item?.name || ""}" loading="lazy" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='inline'"><span class="item-icon item-fallback" style="display:none">${fallback}</span></span>`;
+  }
+  return `<span class="item-icon">${fallback}</span>`;
+}
+
 function renderBoard(state) {
   const view = el("boardView");
   view.innerHTML = "";
@@ -272,9 +292,10 @@ function renderBoard(state) {
       const unit = state.roster.find((u) => u.instanceId === instanceId);
       const tip = `作用：${unit?.role || "unit"}\n羁绊：${(unit?.trait || []).join("/")}\n建议：前排抗伤，后排输出，防止被切后排`;
       const tint = unit?.tint || "#7fc7ff";
+      const visual = unitVisual(unit, { imgClass: "unit-img board-unit-img" });
       cell.innerHTML = `
         <div class="unit-token has-tip" style="--unit-tint:${tint}" data-tip="${tip}" draggable="true" data-drag-unit-id="${unit?.instanceId}" data-from-board-index="${i}">
-          <span class="unit-sprite">${unit?.sprite || unit?.icon || "⚔️"}</span>
+          ${visual}
           <span class="unit-tier">T${unit?.tier ?? "?"}</span>
         </div>
       `;
@@ -304,15 +325,18 @@ function renderBackpack(state) {
       return `
       <div class="stash-item has-tip" data-tip="形状：${item.shape.length}x${item.shape[0].length}\n作用：${item.summary || "构筑加成"}">
         <div class="stash-item-head" draggable="true" data-drag-item-id="${item.instanceId}">
-          <span>${item.icon || "📦"} ${item.name}</span>
-          <span class="card-meta">${status}</span>
+          <div class="stash-item-pic">${itemVisual(item, { imgClass: "item-img stash-item-img" })}</div>
+          <div class="stash-item-info">
+            <span class="stash-item-name">${item.name}</span>
+            <span class="card-meta">${status}</span>
+          </div>
         </div>
         <div class="stash-actions">
           <button class="buy-btn" data-rotate-bag-item-id="${item.instanceId}">旋转</button>
           ${
             item.placed
               ? `<button class="buy-btn" data-remove-bag-item-id="${item.instanceId}">取下</button>`
-              : `<span class="muted">拖拽到背包格子放置</span>`
+              : `<span class="muted">拖到格子</span>`
           }
         </div>
       </div>`;
@@ -341,7 +365,10 @@ function renderBackpack(state) {
     const isAnchor = item ? anchorSet.has(`${col}:${row}:${item.instanceId}`) : false;
     if (item) {
       cell.style.setProperty("--item-tint", item.tint || "#4974bc");
-      cell.innerHTML = `<span class="bag-tile-icon ${isAnchor ? "anchor" : ""}">${item.tileIcon || item.icon || "📦"}</span>`;
+      const tileVisual = item.image
+        ? `<img class="bag-tile-img ${isAnchor ? "anchor" : ""}" src="${item.image}" alt="" loading="lazy">`
+        : `<span class="bag-tile-icon ${isAnchor ? "anchor" : ""}">${item.tileIcon || item.icon || "📦"}</span>`;
+      cell.innerHTML = tileVisual;
 
       const topSame = row > 0 && state.backpackGrid[(row - 1) * GAME_CONFIG.backpack.cols + col] === item.instanceId;
       const rightSame =
@@ -372,11 +399,11 @@ function renderRoster(state) {
     .map(
       (u) => `
       <div class="bench-card has-tip" data-tip="拖到棋盘可上阵。作用：${u.role}，羁绊：${u.trait.join("/")}" draggable="true" data-drag-unit-id="${u.instanceId}">
-        <div class="card-head">
-          <div class="card-title"><span class="icon">${u.sprite || u.icon || "⚔️"}</span><strong>${u.name}</strong></div>
-          <span class="card-meta">T${u.tier}</span>
+        <div class="card-pic">${unitVisual(u, { imgClass: "unit-img bench-unit-img" })}</div>
+        <div class="card-body">
+          <div class="card-title"><strong>${u.name}</strong><span class="card-meta">T${u.tier}</span></div>
+          <div class="card-stats">❤${u.hp} ⚔${u.atk}</div>
         </div>
-        <div class="card-meta">HP ${u.hp} / ATK ${u.atk}</div>
       </div>
     `
     )
@@ -391,14 +418,15 @@ function renderShops(state) {
     .map((u, idx) => {
       const cost = GAME_CONFIG.shop.unitCostByTier[u.tier] || 3;
       return `
-      <div class="shop-card">
-        <div class="card-head">
-          <div class="card-title has-tip" data-tip="单位作用：${u.role}\n羁绊：${u.trait.join("/")}\n建议：${
-            u.role === "frontline" ? "可优先上阵承担伤害" : "可放后排打输出"
-          }"><span class="icon">${u.sprite || u.icon || "⚔️"}</span><strong>${u.name}</strong></div>
-          <button class="buy-btn" data-buy-unit-index="${idx}" ${canOperate ? "" : "disabled"}>购买 ${cost}g</button>
+      <div class="shop-card shop-card-unit has-tip" data-tip="单位作用：${u.role}\n羁绊：${u.trait.join("/")}\n建议：${
+        u.role === "frontline" ? "可优先上阵承担伤害" : "可放后排打输出"
+      }">
+        <div class="shop-card-pic">${unitVisual(u, { imgClass: "unit-img shop-unit-img" })}</div>
+        <div class="shop-card-body">
+          <strong class="shop-card-name">${u.name}</strong>
+          <div class="shop-card-meta">T${u.tier} · ❤${u.hp} ⚔${u.atk}</div>
+          <button class="buy-btn" data-buy-unit-index="${idx}" ${canOperate ? "" : "disabled"}>${cost}g 购买</button>
         </div>
-        <div class="card-meta">T${u.tier} | ${u.role} | HP ${u.hp} / ATK ${u.atk}</div>
       </div>
       `;
     })
@@ -408,12 +436,13 @@ function renderShops(state) {
     .map((i, idx) => {
       const cost = GAME_CONFIG.shop.itemCostByRarity[i.rarity] || 2;
       return `
-      <div class="shop-card">
-        <div class="card-head">
-          <div class="card-title has-tip" data-tip="道具作用：${i.summary || "提供构筑加成"}\n稀有度：${i.rarity}"><span class="icon">${i.icon || "📦"}</span><strong>${i.name}</strong></div>
-          <button class="buy-btn" data-buy-item-index="${idx}" ${canOperate ? "" : "disabled"}>购买 ${cost}g</button>
+      <div class="shop-card shop-card-item has-tip" data-tip="道具作用：${i.summary || "提供构筑加成"}\n稀有度：${i.rarity}">
+        <div class="shop-card-pic">${itemVisual(i, { imgClass: "item-img shop-item-img" })}</div>
+        <div class="shop-card-body">
+          <strong class="shop-card-name">${i.name}</strong>
+          <div class="shop-card-meta">${i.rarity}</div>
+          <button class="buy-btn" data-buy-item-index="${idx}" ${canOperate ? "" : "disabled"}>${cost}g 购买</button>
         </div>
-        <div class="card-meta">${i.rarity} | 形状 ${i.shape.length}x${i.shape[0].length}</div>
       </div>
       `;
     })
@@ -490,6 +519,42 @@ function renderBattleOverlay(state) {
   renderBattleArena(state.battleOverlay);
 }
 
+let attackFloatTimeoutId = 0;
+
+function renderBattleAttackFloat(overlayState) {
+  const float = el("battleAttackFloat");
+  if (!float) return;
+  const aid = overlayState?.arena?.activeAttackerId || "";
+  const tid = overlayState?.arena?.activeTargetId || "";
+  const playerUnits = overlayState?.arena?.playerUnits || [];
+  const enemyUnits = overlayState?.arena?.enemyUnits || [];
+  const attacker = [...playerUnits, ...enemyUnits].find((u) => u && u.id === aid);
+  const target = [...playerUnits, ...enemyUnits].find((u) => u && u.id === tid);
+
+  if (!attacker || !target) {
+    float.classList.add("hidden");
+    float.classList.remove("attack-active");
+    return;
+  }
+
+  const cell = (u) => {
+    if (u.image) return `<img src="${u.image}" alt="">`;
+    return `<span class="arena-sprite">${u.sprite || "⚔️"}</span>`;
+  };
+  el("attackFloatAttacker").innerHTML = cell(attacker);
+  el("attackFloatTarget").innerHTML = cell(target);
+
+  float.classList.remove("hidden");
+  clearTimeout(attackFloatTimeoutId);
+  float.classList.add("attack-active");
+  attackFloatTimeoutId = setTimeout(() => {
+    float.classList.remove("attack-active");
+    attackFloatTimeoutId = setTimeout(() => {
+      float.classList.add("hidden");
+    }, 150);
+  }, 950);
+}
+
 function renderBattleArena(overlayState) {
   const arena = el("battleArena");
   const playerUnits = overlayState?.arena?.playerUnits || [];
@@ -509,7 +574,10 @@ function renderBattleArena(overlayState) {
     ]
       .filter(Boolean)
       .join(" ");
-    return `<div class="${cls}"><span class="arena-sprite">${u.sprite || "⚔️"}</span><div class="arena-hp"><i style="width:${hpPct}%"></i></div></div>`;
+    const visual = u.image
+      ? `<img class="arena-unit-img" src="${u.image}" alt="">`
+      : `<span class="arena-sprite">${u.sprite || "⚔️"}</span>`;
+    return `<div class="${cls}">${visual}<div class="arena-hp"><i style="width:${hpPct}%"></i></div></div>`;
   };
 
   const padTo7 = (arr) => {
@@ -521,6 +589,8 @@ function renderBattleArena(overlayState) {
   const enemyHtml = padTo7(enemyUnits).map((u) => renderUnit(u, "enemy")).join("");
   const playerHtml = padTo7(playerUnits).map((u) => renderUnit(u, "player")).join("");
   arena.innerHTML = `<div class="arena-row">${enemyHtml}</div><div class="arena-row">${playerHtml}</div>`;
+
+  renderBattleAttackFloat(overlayState);
 }
 
 function renderTutorial(state) {

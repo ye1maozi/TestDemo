@@ -37,44 +37,34 @@
     </section>
 
     <main class="layout">
-      <section class="panel status">
-        <h2>对局状态</h2>
-        <div id="runStatus"></div>
-        <h3>爬塔路径（本层）</h3>
-        <div id="towerRoute"></div>
-      </section>
-
-      <section class="panel actions">
-        <h2>层内操作（PVE）</h2>
-        <div class="strategy-row">
-          <span>本层策略：</span>
-          <button id="strategyStableBtn" disabled>稳健线（保血）</button>
-          <button id="strategyGreedyBtn" disabled>贪收益线（冲经济）</button>
-          <button id="endPhaseBtn" disabled>结束当前阶段并封盘</button>
-        </div>
-        <p id="floorSuggestion" class="muted"></p>
-        <div id="nodePreview" class="battle-explain"></div>
-        <div class="action-grid">
-          <button id="exploreBtn" disabled>探索节点</button>
-          <button id="eventBtn" disabled>触发事件</button>
-        </div>
-        <details class="guide-fold">
-          <summary>操作说明（点击展开）</summary>
-          <div class="info-cards">
-            <div class="info-card">
-              <strong>探索节点</strong>
-              <p>必定触发一场PVE战斗，稳定获取金币/秘能，但会承受战损。</p>
-            </div>
-            <div class="info-card">
-              <strong>触发事件</strong>
-              <p>随机事件抉择，收益波动更大，可能高回报也可能高代价。</p>
-            </div>
+      <div class="left-column">
+        <section class="panel status status-compact">
+          <h2>对局状态</h2>
+          <div id="runStatus"></div>
+          <h3>爬塔路径</h3>
+          <div id="towerRoute"></div>
+        </section>
+        <section class="panel actions actions-compact">
+          <div class="strategy-row">
+            <button id="strategyStableBtn" disabled>稳健</button>
+            <button id="strategyGreedyBtn" disabled>贪收益</button>
+            <button id="endPhaseBtn" disabled>结束阶段并封盘</button>
           </div>
-          <p class="muted">自由探索阶段无倒计时，点击“结束当前阶段并封盘”后触发异步PVP接口。</p>
-        </details>
-      </section>
+          <p id="floorSuggestion" class="muted floor-suggestion-one-line"></p>
+          <div id="nodePreview" class="node-preview-mini muted" aria-hidden="true"></div>
+          <div class="action-grid">
+            <button id="exploreBtn" disabled>探索节点</button>
+            <button id="eventBtn" disabled>触发事件</button>
+          </div>
+          <details class="guide-fold">
+            <summary>说明</summary>
+            <p class="muted">探索=PVE战斗；事件=随机收益。封盘后触发异步PVP。</p>
+          </details>
+        </section>
+      </div>
 
       <section class="panel board">
+        <div id="arenaVisual" class="arena-visual" aria-hidden="true"></div>
         <h2>棋盘阵容（7x4）</h2>
         <div id="boardView"></div>
         <h3>候战区（可拖动到棋盘）</h3>
@@ -154,18 +144,27 @@
           </div>
         </div>
         <div id="battleArena" class="battle-arena"></div>
+        <div id="battleAttackFloat" class="battle-attack-float hidden" aria-hidden="true">
+          <div class="attack-float-inner">
+            <div class="attack-attacker" id="attackFloatAttacker"></div>
+            <div class="attack-arrow">→</div>
+            <div class="attack-target" id="attackFloatTarget"></div>
+            <div class="attack-hit-effect" id="attackHitEffect"></div>
+          </div>
+        </div>
         <div id="battleTrack" class="battle-track"></div>
         <div id="battleTimeline" class="battle-timeline"></div>
         <div id="battleResult" class="battle-result"></div>
       </div>
     </section>
 
-    <script type="module" src="./code/main.js"></script>
     <script>
       if (location.protocol === "file:") {
         const warning = document.getElementById("protocolWarning");
         if (warning) warning.style.display = "block";
       }
+      // 使用本地资源时取消下一行注释：window.__BASE__ = new URL(".", location.href).href;
     </script>
+    <script type="module" src="./code/main.js"></script>
   </body>
 </html>
