@@ -19,6 +19,13 @@ export function bindActions(handlers) {
   el("closeBattleOverlayBtn").addEventListener("click", handlers.onCloseBattleOverlay);
   el("battlePauseBtn").addEventListener("click", handlers.onToggleBattlePause);
   el("battleSpeedBtn").addEventListener("click", handlers.onToggleBattleSpeed);
+  el("battleReplayBtn").addEventListener("click", handlers.onReplayBattle);
+  el("battleKeyStartBtn").addEventListener("click", () => handlers.onJumpBattleKeyframe("start"));
+  el("battleKeyMidBtn").addEventListener("click", () => handlers.onJumpBattleKeyframe("mid"));
+  el("battleKeyEndBtn").addEventListener("click", () => handlers.onJumpBattleKeyframe("end"));
+  el("sideTabShopBtn").addEventListener("click", () => handlers.onSwitchSideTab("shop"));
+  el("sideTabBagBtn").addEventListener("click", () => handlers.onSwitchSideTab("bag"));
+  el("sideTabLogBtn").addEventListener("click", () => handlers.onSwitchSideTab("log"));
 
   document.addEventListener("click", (event) => {
     const unitBtn = event.target.closest?.("[data-buy-unit-index]");
@@ -34,6 +41,16 @@ export function bindActions(handlers) {
     const removeBagBtn = event.target.closest?.("[data-remove-bag-item-id]");
     if (removeBagBtn) {
       handlers.onRemoveBagItem(removeBagBtn.dataset.removeBagItemId);
+      return;
+    }
+    const rotateBagBtn = event.target.closest?.("[data-rotate-bag-item-id]");
+    if (rotateBagBtn) {
+      handlers.onRotateBagItem(rotateBagBtn.dataset.rotateBagItemId);
+      return;
+    }
+    const routePickBtn = event.target.closest?.("[data-select-node-index]");
+    if (routePickBtn) {
+      handlers.onSelectTowerNode(Number(routePickBtn.dataset.selectNodeIndex));
       return;
     }
   });
@@ -100,6 +117,7 @@ export function setRunButtons(active) {
 export function render(state) {
   renderStatus(state);
   renderHud(state);
+  renderSideTabs(state);
   renderTowerRoute(state);
   renderActionHints(state);
   renderBoard(state);
@@ -111,6 +129,23 @@ export function render(state) {
   renderTutorial(state);
 }
 
+function renderSideTabs(state) {
+  const current = state.ui?.sideTab || "shop";
+  const tabs = [
+    { id: "sideTabShopBtn", key: "shop" },
+    { id: "sideTabBagBtn", key: "bag" },
+    { id: "sideTabLogBtn", key: "log" },
+  ];
+  tabs.forEach((t) => {
+    const btn = el(t.id);
+    if (!btn) return;
+    btn.classList.toggle("active", t.key === current);
+  });
+  el("sideShopPanel")?.classList.toggle("hidden", current !== "shop");
+  el("sideBagPanel")?.classList.toggle("hidden", current !== "bag");
+  el("sideLogPanel")?.classList.toggle("hidden", current !== "log");
+}
+
 function renderStatus(state) {
   const phase = getCurrentPhase(state);
   const html = `
@@ -120,8 +155,6 @@ function renderStatus(state) {
     <div><span class="tag">生命值</span>${state.hp}</div>
     <div><span class="tag">徽记</span>${state.lifeBadge}</div>
     <div><span class="tag">金币</span>${state.gold}</div>
-    <div><span class="tag">齿轮</span>${state.gear}</div>
-    <div><span class="tag">秘能</span>${state.mana}</div>
     <div><span class="tag">连胜/败</span>${state.streak}</div>
     <div><span class="tag">存活估计</span>${state.mockAliveCount}</div>
   `;
@@ -161,10 +194,19 @@ function renderTowerRoute(state) {
     return;
   }
   const html = route
-    .map((node, idx) => {
-      const meta = map[node] || { icon: "•", text: node };
-      const cls = idx < state.tower.step ? "route-node done" : idx === state.tower.step ? "route-node current" : "route-node";
-      return `<div class="${cls} has-tip" data-tip="节点：${meta.text}\n第${idx + 1}步">${meta.icon} ${meta.text}</div>`;
+    .map((layer, idx) => {
+      const layerNodes = (layer || [])
+        .map((node, nodeIdx) => {
+          const meta = map[node] || { icon: "•", text: node };
+          const isDone = idx < state.tower.step;
+          const isCurrent = idx === state.tower.step;
+          const isPicked = isCurrent && nodeIdx === (state.tower.selectedNode || 0);
+          const cls = `route-node ${isDone ? "done" : ""} ${isCurrent ? "current" : ""} ${isPicked ? "picked" : ""}`.trim();
+          const disabled = isCurrent ? "" : "disabled";
+          return `<button class="${cls} has-tip" ${disabled} data-select-node-index="${nodeIdx}" data-tip="节点：${meta.text}\n第${idx + 1}步可选分支">${meta.icon} ${meta.text}</button>`;
+        })
+        .join("");
+      return `<div class="tower-layer">${layerNodes}</div>`;
     })
     .join("");
   const history = (state.tower.history || []).map((n) => map[n]?.text || n).join(" -> ");
@@ -177,11 +219,15 @@ function renderActionHints(state) {
   const phase = getCurrentPhase(state);
   const canOperate = state.runActive && phase.key === "PVE_OPEN";
   const canPickStrategy = canOperate && state.phaseActions.exploreUsed === 0 && state.phaseActions.eventUsed === 0;
+  const layer = state.tower?.route?.[state.tower?.step] || [];
+  const currentNode = layer[Math.max(0, Math.min(layer.length - 1, state.tower?.selectedNode || 0))] || state.tower?.currentNode || "combat";
+  const isCombatNode = ["combat", "elite", "boss"].includes(currentNode);
+  const isEventNode = ["event", "shop", "rest"].includes(currentNode);
 
   el("exploreBtn").textContent = `探索节点（剩余${exploreLeft}）`;
   el("eventBtn").textContent = `触发事件（剩余${eventLeft}）`;
-  el("exploreBtn").disabled = !canOperate || exploreLeft <= 0;
-  el("eventBtn").disabled = !canOperate || eventLeft <= 0;
+  el("exploreBtn").disabled = !canOperate || exploreLeft <= 0 || !isCombatNode;
+  el("eventBtn").disabled = !canOperate || eventLeft <= 0 || !isEventNode;
   el("refreshShopBtn").disabled = !canOperate;
   el("autoArrangeBtn").disabled = !canOperate;
   el("endPhaseBtn").disabled = !canOperate;
@@ -189,13 +235,24 @@ function renderActionHints(state) {
   el("strategyGreedyBtn").disabled = !canPickStrategy;
 
   const strategyText = state.floorPlan.strategy === "greedy" ? "先事件 -> 买输出单位 -> 整理背包 -> 探索" : "先买前排 -> 探索稳血 -> 再事件补收益";
-  el("floorSuggestion").textContent = `本层建议动作序列：${state.floorPlan.suggestion || strategyText}`;
+  el("floorSuggestion").textContent = `当前选中节点：${currentNode} ｜ 本层建议动作序列：${state.floorPlan.suggestion || strategyText}`;
+  const previewMap = {
+    combat: "普通战斗：收益稳定，风险中等",
+    elite: "精英战：收益更高，伤害风险更高",
+    boss: "层主战：高风险高收益，建议满编再打",
+    event: "事件节点：随机收益，波动大",
+    shop: "商店节点：补牌补装，提升构筑完整度",
+    rest: "营地节点：回血与止损窗口",
+  };
+  el("nodePreview").innerHTML = `<strong>节点预览</strong><br/>${previewMap[currentNode] || "未知节点"}`;
 
   el("exploreBtn").classList.add("has-tip");
   el("eventBtn").classList.add("has-tip");
   el("exploreBtn").setAttribute(
     "data-tip",
-    `预计收益：金币 +2~4，秘能 +0~1\n风险：中（必定战斗，可能掉血）\n策略建议：${state.floorPlan.strategy === "greedy" ? "可作为后手补资源" : "优先执行"}`
+    `预计收益：金币 +2~4，秘能 +0~1\n风险：中（必定战斗，可能掉血）\n当前节点：${currentNode}\n策略建议：${
+      state.floorPlan.strategy === "greedy" ? "可作为后手补资源" : "优先执行"
+    }`
   );
   el("eventBtn").setAttribute(
     "data-tip",
@@ -214,15 +271,15 @@ function renderBoard(state) {
     if (instanceId) {
       const unit = state.roster.find((u) => u.instanceId === instanceId);
       const tip = `作用：${unit?.role || "unit"}\n羁绊：${(unit?.trait || []).join("/")}\n建议：前排抗伤，后排输出，防止被切后排`;
+      const tint = unit?.tint || "#7fc7ff";
       cell.innerHTML = `
-        <div class="card-title has-tip" data-tip="${tip}" draggable="true" data-drag-unit-id="${unit?.instanceId}" data-from-board-index="${i}">
-          <span class="icon">${unit?.icon || "⚔️"}</span>
-          <span class="unit">${unit?.name || "未知单位"}</span>
+        <div class="unit-token has-tip" style="--unit-tint:${tint}" data-tip="${tip}" draggable="true" data-drag-unit-id="${unit?.instanceId}" data-from-board-index="${i}">
+          <span class="unit-sprite">${unit?.sprite || unit?.icon || "⚔️"}</span>
+          <span class="unit-tier">T${unit?.tier ?? "?"}</span>
         </div>
-        <div class="card-meta">T${unit?.tier ?? "?"} HP${unit?.hp ?? 0} ATK${unit?.atk ?? 0}</div>
       `;
     } else {
-      cell.innerHTML = "<span class='muted'>拖动单位到此</span>";
+      cell.innerHTML = "<span class='board-empty-dot'>+</span>";
     }
     view.appendChild(cell);
   }
@@ -251,6 +308,7 @@ function renderBackpack(state) {
           <span class="card-meta">${status}</span>
         </div>
         <div class="stash-actions">
+          <button class="buy-btn" data-rotate-bag-item-id="${item.instanceId}">旋转</button>
           ${
             item.placed
               ? `<button class="buy-btn" data-remove-bag-item-id="${item.instanceId}">取下</button>`
@@ -281,13 +339,23 @@ function renderBackpack(state) {
       cell.setAttribute("data-tip", `道具：${item.name}\n作用：${item.summary || "提供战前加成"}`);
     }
     const isAnchor = item ? anchorSet.has(`${col}:${row}:${item.instanceId}`) : false;
-    if (item && isAnchor) {
-      cell.textContent = `${item.icon || "📦"}${item.name.slice(0, 2)}`;
-    } else if (item) {
-      cell.classList.add("fill-fragment");
-      cell.textContent = "■";
+    if (item) {
+      cell.style.setProperty("--item-tint", item.tint || "#4974bc");
+      cell.innerHTML = `<span class="bag-tile-icon ${isAnchor ? "anchor" : ""}">${item.tileIcon || item.icon || "📦"}</span>`;
+
+      const topSame = row > 0 && state.backpackGrid[(row - 1) * GAME_CONFIG.backpack.cols + col] === item.instanceId;
+      const rightSame =
+        col + 1 < GAME_CONFIG.backpack.cols && state.backpackGrid[row * GAME_CONFIG.backpack.cols + (col + 1)] === item.instanceId;
+      const bottomSame =
+        row + 1 < GAME_CONFIG.backpack.rows && state.backpackGrid[(row + 1) * GAME_CONFIG.backpack.cols + col] === item.instanceId;
+      const leftSame = col > 0 && state.backpackGrid[row * GAME_CONFIG.backpack.cols + (col - 1)] === item.instanceId;
+
+      if (topSame) cell.classList.add("join-top");
+      if (rightSame) cell.classList.add("join-right");
+      if (bottomSame) cell.classList.add("join-bottom");
+      if (leftSame) cell.classList.add("join-left");
     } else {
-      cell.textContent = "";
+      cell.innerHTML = "";
     }
     view.appendChild(cell);
   }
@@ -305,7 +373,7 @@ function renderRoster(state) {
       (u) => `
       <div class="bench-card has-tip" data-tip="拖到棋盘可上阵。作用：${u.role}，羁绊：${u.trait.join("/")}" draggable="true" data-drag-unit-id="${u.instanceId}">
         <div class="card-head">
-          <div class="card-title"><span class="icon">${u.icon || "⚔️"}</span><strong>${u.name}</strong></div>
+          <div class="card-title"><span class="icon">${u.sprite || u.icon || "⚔️"}</span><strong>${u.name}</strong></div>
           <span class="card-meta">T${u.tier}</span>
         </div>
         <div class="card-meta">HP ${u.hp} / ATK ${u.atk}</div>
@@ -327,7 +395,7 @@ function renderShops(state) {
         <div class="card-head">
           <div class="card-title has-tip" data-tip="单位作用：${u.role}\n羁绊：${u.trait.join("/")}\n建议：${
             u.role === "frontline" ? "可优先上阵承担伤害" : "可放后排打输出"
-          }"><span class="icon">${u.icon || "⚔️"}</span><strong>${u.name}</strong></div>
+          }"><span class="icon">${u.sprite || u.icon || "⚔️"}</span><strong>${u.name}</strong></div>
           <button class="buy-btn" data-buy-unit-index="${idx}" ${canOperate ? "" : "disabled"}>购买 ${cost}g</button>
         </div>
         <div class="card-meta">T${u.tier} | ${u.role} | HP ${u.hp} / ATK ${u.atk}</div>
@@ -370,7 +438,8 @@ function renderLog(state) {
   }
   const latest = state.logs[0] || "";
   const key = latest.includes("PVP") || latest.includes("徽记") || latest.includes("淘汰") ? latest : "";
-  const html = state.logs
+  const list = key ? state.logs.slice(1) : state.logs;
+  const html = list
     .map((line) => {
       let cls = "";
       if (line.includes("PVP失败") || line.includes("淘汰") || line.includes("超时")) cls = "bad";
@@ -417,6 +486,41 @@ function renderBattleOverlay(state) {
   el("battleResult").textContent = `${state.battleOverlay.result || ""}${state.battleOverlay.playing ? "（播放中）" : ""}`;
   el("battlePauseBtn").textContent = state.battleOverlay.paused ? "继续" : "暂停";
   el("battleSpeedBtn").textContent = `速度 ${state.battleOverlay.speed || 1}x`;
+  el("battleReplayBtn").disabled = state.battleOverlay.playing;
+  renderBattleArena(state.battleOverlay);
+}
+
+function renderBattleArena(overlayState) {
+  const arena = el("battleArena");
+  const playerUnits = overlayState?.arena?.playerUnits || [];
+  const enemyUnits = overlayState?.arena?.enemyUnits || [];
+  const activeAttacker = overlayState?.arena?.activeAttackerId || "";
+  const activeTarget = overlayState?.arena?.activeTargetId || "";
+
+  const renderUnit = (u, side) => {
+    if (!u) return `<div class="arena-unit ${side} dead"></div>`;
+    const hpPct = Math.max(0, Math.min(100, Math.round((u.hp / u.maxHp) * 100)));
+    const cls = [
+      "arena-unit",
+      side,
+      u.hp <= 0 ? "dead" : "",
+      u.id === activeAttacker ? "attacker" : "",
+      u.id === activeTarget ? "target" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return `<div class="${cls}"><span class="arena-sprite">${u.sprite || "⚔️"}</span><div class="arena-hp"><i style="width:${hpPct}%"></i></div></div>`;
+  };
+
+  const padTo7 = (arr) => {
+    const out = [...arr];
+    while (out.length < 7) out.push(null);
+    return out.slice(0, 7);
+  };
+
+  const enemyHtml = padTo7(enemyUnits).map((u) => renderUnit(u, "enemy")).join("");
+  const playerHtml = padTo7(playerUnits).map((u) => renderUnit(u, "player")).join("");
+  arena.innerHTML = `<div class="arena-row">${enemyHtml}</div><div class="arena-row">${playerHtml}</div>`;
 }
 
 function renderTutorial(state) {

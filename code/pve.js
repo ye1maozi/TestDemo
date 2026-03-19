@@ -78,22 +78,43 @@ export function rollShop(state) {
 
 export function rollTowerRoute(state) {
   const route = [];
-  for (let i = 0; i < 5; i += 1) {
-    route.push(pickOne(TOWER_NODE_POOL));
+  for (let layer = 0; layer < 5; layer += 1) {
+    const choices = [];
+    for (let n = 0; n < 3; n += 1) {
+      choices.push(pickOne(TOWER_NODE_POOL));
+    }
+    if (layer === 0) choices[0] = "combat";
+    if (layer === 2) choices[1] = "elite";
+    if (layer === 4) {
+      choices[0] = state.floor % 3 === 0 ? "boss" : "elite";
+      choices[2] = "rest";
+    }
+    route.push(choices);
   }
-  route[4] = state.floor % 3 === 0 ? "boss" : route[4];
   state.tower.route = route;
   state.tower.step = 0;
   state.tower.history = [];
-  state.tower.currentNode = route[0] || "combat";
+  state.tower.selectedNode = 0;
+  state.tower.currentNode = route[0]?.[0] || "combat";
 }
 
 export function consumeTowerNode(state) {
-  const node = state.tower.route[state.tower.step] || "combat";
+  const layer = state.tower.route[state.tower.step] || ["combat"];
+  const selected = Math.max(0, Math.min(layer.length - 1, state.tower.selectedNode || 0));
+  const node = layer[selected] || layer[0] || "combat";
   state.tower.history.push(node);
   state.tower.step += 1;
-  state.tower.currentNode = state.tower.route[state.tower.step] || null;
+  state.tower.selectedNode = 0;
+  state.tower.currentNode = state.tower.route[state.tower.step]?.[0] || null;
   return node;
+}
+
+export function selectTowerNode(state, nodeIndex) {
+  const layer = state.tower.route[state.tower.step] || [];
+  if (nodeIndex < 0 || nodeIndex >= layer.length) return false;
+  state.tower.selectedNode = nodeIndex;
+  state.tower.currentNode = layer[nodeIndex];
+  return true;
 }
 
 export function buyUnit(state, shopIndex = 0) {

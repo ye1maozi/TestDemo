@@ -10,6 +10,7 @@ import {
   refreshShop,
   rollShop,
   rollTowerRoute,
+  selectTowerNode,
   runEvent,
   runExplore,
   settleFloorEconomy,
@@ -30,6 +31,12 @@ const placeItemAt =
     msg: "当前背包模块版本较旧，请刷新页面或重启本地服务",
   }));
 const removeItemFromBackpack = backpackMod.removeItemFromBackpack || (() => false);
+const rotateItemInBackpack =
+  backpackMod.rotateItemInBackpack ||
+  (() => ({
+    ok: false,
+    msg: "当前背包模块版本较旧，请刷新页面或重启本地服务",
+  }));
 
 function bootstrap() {
   bindActions({
@@ -50,6 +57,7 @@ function bootstrap() {
     onBoardDrop: handleBoardDrop,
     onBagDrop: handleBagDrop,
     onRemoveBagItem: handleRemoveBagItem,
+    onRotateBagItem: handleRotateBagItem,
     onEndPhase: handleEndPhase,
     onSetStrategy: setFloorStrategy,
     onCloseBattleOverlay: () => {
@@ -66,9 +74,23 @@ function bootstrap() {
       state.battleOverlay.speed = state.battleOverlay.speed === 2 ? 1 : 2;
       render(state);
     },
+    onReplayBattle: async () => {
+      if (!state.battleOverlay.visible || phaseBusy) return;
+      await playBattleOverlayTimeline(true);
+    },
+    onJumpBattleKeyframe: (pos) => {
+      if (!state.battleOverlay.visible) return;
+      jumpBattleKeyframe(pos);
+      render(state);
+    },
     onSkipTutorial: () => {
       state.tutorial.skipped = true;
       log(state, "你已跳过第一关引导");
+      render(state);
+    },
+    onSelectTowerNode: handleSelectTowerNode,
+    onSwitchSideTab: (tab) => {
+      state.ui.sideTab = tab;
       render(state);
     },
   });
@@ -92,13 +114,38 @@ function startRun() {
 }
 
 function handleExploreWithTower(s) {
-  const node = consumeTowerNode(s);
+  const node = getCurrentSelectedNode(s);
+  if (!["combat", "elite", "boss"].includes(node)) {
+    return { ok: false, msg: `当前节点是[${node}]，请使用“触发事件”执行该节点` };
+  }
+  consumeTowerNode(s);
   return runExplore(s, node);
 }
 
 function handleEventWithTower(s) {
-  const node = consumeTowerNode(s);
+  const node = getCurrentSelectedNode(s);
+  if (!["event", "shop", "rest"].includes(node)) {
+    return { ok: false, msg: `当前节点是[${node}]，请使用“探索节点”执行该节点` };
+  }
+  consumeTowerNode(s);
   return runEvent(s, node);
+}
+
+function getCurrentSelectedNode(s) {
+  const layer = s.tower?.route?.[s.tower?.step] || ["combat"];
+  const idx = Math.max(0, Math.min(layer.length - 1, s.tower?.selectedNode || 0));
+  return layer[idx] || "combat";
+}
+
+function handleSelectTowerNode(nodeIndex) {
+  if (!state.runActive || phaseBusy) return;
+  const phase = getCurrentPhase(state);
+  if (phase.key !== "PVE_OPEN") return;
+  const ok = selectTowerNode(state, nodeIndex);
+  if (ok) {
+    log(state, `已选择路径节点：${state.tower.currentNode}`);
+    render(state);
+  }
 }
 
 function endRun() {
@@ -136,6 +183,7 @@ async function handlePveAction(fn, tutorialMark = "") {
   if (result?.ok && tutorialMark === "eventUsed") state.phaseActions.eventUsed += 1;
   if (result?.ok) updateBackpackSummary();
   if (result?.ok && result?.battle?.replay) {
+    const arena = buildArenaFromState("pve");
     state.battleOverlay = {
       visible: true,
       title: `探索战斗回放（第${state.floor}层）`,
@@ -146,6 +194,7 @@ async function handlePveAction(fn, tutorialMark = "") {
       playIndex: 0,
       paused: false,
       speed: 1,
+      arena,
       result: result.battle.win ? "结果：胜利" : "结果：失败",
     };
     await playBattleOverlayTimeline();
@@ -268,6 +317,18 @@ function handleRemoveBagItem(itemInstanceId) {
   }
 }
 
+function handleRotateBagItem(itemInstanceId) {
+  if (!state.runActive || phaseBusy) return;
+  const phase = getCurrentPhase(state);
+  if (phase.key !== "PVE_OPEN") return;
+  const result = rotateItemInBackpack(state, itemInstanceId);
+  if (result.ok) {
+    updateBackpackSummary();
+  }
+  log(state, result.msg);
+  render(state);
+}
+
 function maybeLoseByDeath() {
   const triggered = maybeEliminateByHp(state);
   if (triggered) {
@@ -290,6 +351,7 @@ async function resolveAsyncPvp() {
       `PVP胜利(${result.source}) 对手=${result.enemyName} 战力${result.report.playerPower} vs ${result.report.enemyPower}`
     );
     state.streak = state.streak >= 0 ? state.streak + 1 : 1;
+    const arena = buildArenaFromState("pvp");
     state.battleOverlay = {
       visible: true,
       title: "异步PVP回放",
@@ -300,6 +362,7 @@ async function resolveAsyncPvp() {
       playIndex: 0,
       paused: false,
       speed: 1,
+      arena,
       result: "结果：PVP胜利",
     };
   } else {
@@ -313,6 +376,7 @@ async function resolveAsyncPvp() {
       }`
     );
     state.battleExplain = buildLossExplanation(result);
+    const arena = buildArenaFromState("pvp");
     state.battleOverlay = {
       visible: true,
       title: "异步PVP回放",
@@ -323,6 +387,7 @@ async function resolveAsyncPvp() {
       playIndex: 0,
       paused: false,
       speed: 1,
+      arena,
       result: "结果：PVP失败",
     };
     const latePenalty = applyLateFloorPenalty(state, result);
@@ -372,6 +437,7 @@ async function resolveAsyncPvpWithGuard() {
         playIndex: 0,
         paused: false,
         speed: 1,
+        arena: buildArenaFromState("pvp"),
         result: "结果：小负（保底）",
       };
       await playBattleOverlayTimeline();
@@ -478,13 +544,16 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function playBattleOverlayTimeline() {
+async function playBattleOverlayTimeline(forceRestart = false) {
   if (!state.battleOverlay?.visible) return;
   const full = state.battleOverlay.timeline || [];
   if (!full.length) return;
+  if (state.battleOverlay.playing && !forceRestart) return;
   state.battleOverlay.playing = true;
   state.battleOverlay.playIndex = 0;
   state.battleOverlay.renderedTimeline = [];
+  const arenaSeed = buildArenaFromState(state.battleOverlay.title?.includes("PVP") ? "pvp" : "pve");
+  if (arenaSeed) state.battleOverlay.arena = arenaSeed;
   render(state);
   for (let i = 0; i < full.length; i += 1) {
     while (state.battleOverlay.paused) {
@@ -493,6 +562,7 @@ async function playBattleOverlayTimeline() {
     }
     state.battleOverlay.playIndex = i;
     state.battleOverlay.renderedTimeline.push(full[i]);
+    applyArenaStepToOverlay(full[i], i);
     if (typeof full[i].playerHp === "number") state.battleOverlay.playerHp = Math.max(0, Math.min(100, full[i].playerHp));
     if (typeof full[i].enemyHp === "number") state.battleOverlay.enemyHp = Math.max(0, Math.min(100, full[i].enemyHp));
     render(state);
@@ -500,6 +570,90 @@ async function playBattleOverlayTimeline() {
     await sleep(Math.max(80, Math.round(220 / speed)));
   }
   state.battleOverlay.playing = false;
+}
+
+function jumpBattleKeyframe(pos) {
+  const full = state.battleOverlay?.timeline || [];
+  if (!full.length) return;
+  let idx = 0;
+  if (pos === "mid") idx = Math.max(0, Math.floor(full.length / 2));
+  if (pos === "end") idx = full.length - 1;
+  state.battleOverlay.playing = false;
+  state.battleOverlay.renderedTimeline = full.slice(0, idx + 1);
+  state.battleOverlay.playIndex = idx;
+  const arenaSeed = buildArenaFromState(state.battleOverlay.title?.includes("PVP") ? "pvp" : "pve");
+  if (arenaSeed) state.battleOverlay.arena = arenaSeed;
+  for (let i = 0; i <= idx; i += 1) {
+    applyArenaStepToOverlay(full[i], i);
+    if (typeof full[i].playerHp === "number") state.battleOverlay.playerHp = Math.max(0, Math.min(100, full[i].playerHp));
+    if (typeof full[i].enemyHp === "number") state.battleOverlay.enemyHp = Math.max(0, Math.min(100, full[i].enemyHp));
+  }
+}
+
+function buildArenaFromState(mode) {
+  const active = state.boardSlots
+    .filter(Boolean)
+    .map((id) => state.roster.find((u) => u.instanceId === id))
+    .filter(Boolean)
+    .slice(0, 7);
+  const fallback = state.roster.slice(0, 4);
+  const base = active.length ? active : fallback;
+  const playerUnits = base.map((u, idx) => ({
+    id: `p_${u.instanceId || idx}`,
+    sprite: u.sprite || u.icon || "⚔️",
+    hp: 100,
+    maxHp: 100,
+  }));
+
+  const enemySprites = mode === "pvp" ? ["🛡️", "🏹", "🔮", "🗡️", "⚙️", "🧱", "🕶️"] : ["👾", "💀", "🦂", "👹", "🧟", "🐍", "🕸️"];
+  const enemyUnits = Array.from({ length: Math.max(3, playerUnits.length) }, (_, i) => ({
+    id: `e_${i}`,
+    sprite: enemySprites[i % enemySprites.length],
+    hp: 100,
+    maxHp: 100,
+  }));
+  return {
+    playerUnits,
+    enemyUnits,
+    activeAttackerId: "",
+    activeTargetId: "",
+  };
+}
+
+function extractDamage(step) {
+  const m = (step?.text || "").match(/(\d+)/);
+  return m ? Number(m[1]) : 8;
+}
+
+function pickAlive(units) {
+  return units.filter((u) => u.hp > 0);
+}
+
+function applyArenaStepToOverlay(step, index) {
+  const arena = state.battleOverlay?.arena;
+  if (!arena) return;
+  const dmg = extractDamage(step);
+  const playerAlive = pickAlive(arena.playerUnits);
+  const enemyAlive = pickAlive(arena.enemyUnits);
+  arena.activeAttackerId = "";
+  arena.activeTargetId = "";
+
+  if (step.side === "player" || step.side === "item") {
+    if (!enemyAlive.length || !playerAlive.length) return;
+    const attacker = playerAlive[index % playerAlive.length];
+    const target = enemyAlive[enemyAlive.length - 1];
+    const finalDmg = step.side === "item" ? Math.round(dmg * 0.6) : dmg;
+    target.hp = Math.max(0, target.hp - finalDmg);
+    arena.activeAttackerId = attacker.id;
+    arena.activeTargetId = target.id;
+  } else if (step.side === "enemy") {
+    if (!enemyAlive.length || !playerAlive.length) return;
+    const attacker = enemyAlive[index % enemyAlive.length];
+    const target = playerAlive[playerAlive.length - 1];
+    target.hp = Math.max(0, target.hp - dmg);
+    arena.activeAttackerId = attacker.id;
+    arena.activeTargetId = target.id;
+  }
 }
 
 bootstrap();

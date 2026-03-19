@@ -28,6 +28,9 @@ export function createInitialState() {
       strategy: "stable", // stable | greedy
       suggestion: "",
     },
+    ui: {
+      sideTab: "shop", // shop | bag | log
+    },
     phaseActions: {
       exploreUsed: 0,
       eventUsed: 0,
@@ -50,6 +53,7 @@ export function createInitialState() {
       route: [],
       history: [],
       currentNode: null,
+      selectedNode: 0,
     },
     tutorial: {
       enabled: true,

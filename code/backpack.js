@@ -95,6 +95,53 @@ export function placeItemAt(state, itemInstanceId, col, row) {
   return { ok: true, msg: `已放置 ${item.name}` };
 }
 
+function rotateShapeCW(shape) {
+  const rows = shape.length;
+  const cols = shape[0].length;
+  const out = Array.from({ length: cols }, () => Array(rows).fill(0));
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      out[c][rows - 1 - r] = shape[r][c];
+    }
+  }
+  return out;
+}
+
+export function rotateItemInBackpack(state, itemInstanceId) {
+  const item = state.backpackItems.find((x) => x.instanceId === itemInstanceId);
+  if (!item) return { ok: false, msg: "道具不存在" };
+
+  const oldShape = item.shape.map((r) => [...r]);
+  const newShape = rotateShapeCW(oldShape);
+  const oldPlaced = item.placed;
+  const oldAnchor = item.anchor ? { ...item.anchor } : null;
+
+  item.shape = newShape;
+  if (!oldPlaced || !oldAnchor) {
+    return { ok: true, msg: `已旋转 ${item.name}` };
+  }
+
+  removeItemFromBackpack(state, itemInstanceId);
+  if (canPlaceShape(state.backpackGrid, item.shape, oldAnchor.col, oldAnchor.row)) {
+    placeShape(state.backpackGrid, item.shape, oldAnchor.col, oldAnchor.row, item.instanceId);
+    item.placed = true;
+    item.anchor = oldAnchor;
+    return { ok: true, msg: `已旋转 ${item.name}` };
+  }
+
+  item.shape = oldShape;
+  if (canPlaceShape(state.backpackGrid, item.shape, oldAnchor.col, oldAnchor.row)) {
+    placeShape(state.backpackGrid, item.shape, oldAnchor.col, oldAnchor.row, item.instanceId);
+    item.placed = true;
+    item.anchor = oldAnchor;
+  } else {
+    item.placed = false;
+    item.anchor = null;
+    rebuildGridFromItems(state);
+  }
+  return { ok: false, msg: "旋转后空间不足，已恢复原形状" };
+}
+
 export function computeBackpackBonus(state) {
   const bonuses = {
     globalAtkPct: 0,

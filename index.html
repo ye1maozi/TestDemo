@@ -53,21 +53,25 @@
           <button id="endPhaseBtn" disabled>结束当前阶段并封盘</button>
         </div>
         <p id="floorSuggestion" class="muted"></p>
+        <div id="nodePreview" class="battle-explain"></div>
         <div class="action-grid">
           <button id="exploreBtn" disabled>探索节点</button>
           <button id="eventBtn" disabled>触发事件</button>
         </div>
-        <div class="info-cards">
-          <div class="info-card">
-            <strong>探索节点</strong>
-            <p>必定触发一场PVE战斗，稳定获取金币/秘能，但会承受战损。</p>
+        <details class="guide-fold">
+          <summary>操作说明（点击展开）</summary>
+          <div class="info-cards">
+            <div class="info-card">
+              <strong>探索节点</strong>
+              <p>必定触发一场PVE战斗，稳定获取金币/秘能，但会承受战损。</p>
+            </div>
+            <div class="info-card">
+              <strong>触发事件</strong>
+              <p>随机事件抉择，收益波动更大，可能高回报也可能高代价。</p>
+            </div>
           </div>
-          <div class="info-card">
-            <strong>触发事件</strong>
-            <p>随机事件抉择，收益波动更大，可能高回报也可能高代价。</p>
-          </div>
-        </div>
-        <p class="muted">自由探索阶段无倒计时，点击“结束当前阶段并封盘”后触发异步PVP接口。</p>
+          <p class="muted">自由探索阶段无倒计时，点击“结束当前阶段并封盘”后触发异步PVP接口。</p>
+        </details>
       </section>
 
       <section class="panel board">
@@ -77,30 +81,35 @@
         <div id="unitRoster"></div>
       </section>
 
-      <section class="panel backpack">
-        <h2>背包（10x6）</h2>
-        <button id="autoArrangeBtn" disabled>整理背包并放入格子</button>
-        <div id="backpackStats"></div>
-        <h3>背包道具栏（拖到格子中生效）</h3>
-        <div id="backpackStash"></div>
-        <div id="backpackView"></div>
-      </section>
-
-      <section class="panel roster">
-        <h2>单位与商店</h2>
-        <div class="shop-actions">
-          <button id="refreshShopBtn" disabled>刷新商店</button>
+      <section class="panel side">
+        <div class="side-tabs">
+          <button id="sideTabShopBtn" class="side-tab active">商店</button>
+          <button id="sideTabBagBtn" class="side-tab">背包</button>
+          <button id="sideTabLogBtn" class="side-tab">日志</button>
         </div>
-        <h3>商店单位</h3>
-        <div id="shopUnits"></div>
-        <h3>商店道具</h3>
-        <div id="shopItems"></div>
-      </section>
-
-      <section class="panel log">
-        <h2>运行日志</h2>
-        <div id="battleExplain" class="battle-explain hidden"></div>
-        <div id="logView"></div>
+        <div id="sideShopPanel" class="side-panel">
+          <h2>单位与商店</h2>
+          <div class="shop-actions">
+            <button id="refreshShopBtn" disabled>刷新商店</button>
+          </div>
+          <h3>商店单位</h3>
+          <div id="shopUnits"></div>
+          <h3>商店道具</h3>
+          <div id="shopItems"></div>
+        </div>
+        <div id="sideBagPanel" class="side-panel hidden">
+          <h2>背包（10x6）</h2>
+          <button id="autoArrangeBtn" disabled>整理背包并放入格子</button>
+          <div id="backpackStats"></div>
+          <h3>背包道具栏（拖到格子中生效）</h3>
+          <div id="backpackStash"></div>
+          <div id="backpackView"></div>
+        </div>
+        <div id="sideLogPanel" class="side-panel hidden">
+          <h2>运行日志</h2>
+          <div id="battleExplain" class="battle-explain hidden"></div>
+          <div id="logView"></div>
+        </div>
       </section>
     </main>
 
@@ -125,6 +134,10 @@
           <div class="battle-controls">
             <button id="battlePauseBtn">暂停</button>
             <button id="battleSpeedBtn">速度 1x</button>
+            <button id="battleReplayBtn">重播</button>
+            <button id="battleKeyStartBtn">开场</button>
+            <button id="battleKeyMidBtn">拐点</button>
+            <button id="battleKeyEndBtn">终局</button>
             <button id="closeBattleOverlayBtn">关闭</button>
           </div>
         </div>
@@ -140,6 +153,7 @@
             <span id="battleEnemyHp">100</span>
           </div>
         </div>
+        <div id="battleArena" class="battle-arena"></div>
         <div id="battleTrack" class="battle-track"></div>
         <div id="battleTimeline" class="battle-timeline"></div>
         <div id="battleResult" class="battle-result"></div>
