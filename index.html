@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>塔陨：异步终局 Demo</title>
+    <link rel="stylesheet" href="./code/styles.css" />
+  </head>
+  <body>
+    <div class="bg-decor"></div>
+    <div id="protocolWarning" style="display: none; margin: 8px 12px; padding: 10px 12px; border: 1px solid #8a4f4f; background: #2a1a1a; color: #ffd4d4; border-radius: 8px;">
+      检测到你正在用 <code>file://</code> 打开页面，模块脚本会被浏览器拦截。请运行根目录的
+      <code>start-demo.bat</code>（或 <code>start-demo.ps1</code>），然后访问
+      <a href="http://127.0.0.1:8080" style="color: #9fd7ff;">http://127.0.0.1:8080</a>。
+    </div>
+    <header class="topbar">
+      <div>
+        <h1>塔陨：异步终局</h1>
+        <p class="subtitle">Roguelike + 自走棋 + 背包构筑 + 异步PVP接口 Demo</p>
+      </div>
+      <div class="topbar-actions">
+        <button id="startRunBtn">开始新对局</button>
+        <button id="endRunBtn" disabled>强制结束</button>
+      </div>
+    </header>
+
+    <section class="hud-strip">
+      <div class="hud-card"><span>Run</span><strong id="hudRunId">-</strong></div>
+      <div class="hud-card"><span>层数</span><strong id="hudFloor">0/0</strong></div>
+      <div class="hud-card"><span>阶段</span><strong id="hudPhase">待机</strong></div>
+      <div class="hud-card"><span>HP</span><strong id="hudHp">0</strong></div>
+      <div class="hud-card"><span>徽记</span><strong id="hudBadge">0</strong></div>
+      <div class="hud-card"><span>金币</span><strong id="hudGold">0</strong></div>
+      <div class="hud-card"><span>齿轮</span><strong id="hudGear">0</strong></div>
+      <div class="hud-card"><span>秘能</span><strong id="hudMana">0</strong></div>
+      <div class="hud-card"><span>存活估计</span><strong id="hudAlive">0</strong></div>
+    </section>
+
+    <main class="layout">
+      <section class="panel status">
+        <h2>对局状态</h2>
+        <div id="runStatus"></div>
+        <h3>爬塔路径（本层）</h3>
+        <div id="towerRoute"></div>
+      </section>
+
+      <section class="panel actions">
+        <h2>层内操作（PVE）</h2>
+        <div class="strategy-row">
+          <span>本层策略：</span>
+          <button id="strategyStableBtn" disabled>稳健线（保血）</button>
+          <button id="strategyGreedyBtn" disabled>贪收益线（冲经济）</button>
+          <button id="endPhaseBtn" disabled>结束当前阶段并封盘</button>
+        </div>
+        <p id="floorSuggestion" class="muted"></p>
+        <div class="action-grid">
+          <button id="exploreBtn" disabled>探索节点</button>
+          <button id="eventBtn" disabled>触发事件</button>
+        </div>
+        <div class="info-cards">
+          <div class="info-card">
+            <strong>探索节点</strong>
+            <p>必定触发一场PVE战斗，稳定获取金币/秘能，但会承受战损。</p>
+          </div>
+          <div class="info-card">
+            <strong>触发事件</strong>
+            <p>随机事件抉择，收益波动更大，可能高回报也可能高代价。</p>
+          </div>
+        </div>
+        <p class="muted">自由探索阶段无倒计时，点击“结束当前阶段并封盘”后触发异步PVP接口。</p>
+      </section>
+
+      <section class="panel board">
+        <h2>棋盘阵容（7x4）</h2>
+        <div id="boardView"></div>
+        <h3>候战区（可拖动到棋盘）</h3>
+        <div id="unitRoster"></div>
+      </section>
+
+      <section class="panel backpack">
+        <h2>背包（10x6）</h2>
+        <button id="autoArrangeBtn" disabled>整理背包并放入格子</button>
+        <div id="backpackStats"></div>
+        <h3>背包道具栏（拖到格子中生效）</h3>
+        <div id="backpackStash"></div>
+        <div id="backpackView"></div>
+      </section>
+
+      <section class="panel roster">
+        <h2>单位与商店</h2>
+        <div class="shop-actions">
+          <button id="refreshShopBtn" disabled>刷新商店</button>
+        </div>
+        <h3>商店单位</h3>
+        <div id="shopUnits"></div>
+        <h3>商店道具</h3>
+        <div id="shopItems"></div>
+      </section>
+
+      <section class="panel log">
+        <h2>运行日志</h2>
+        <div id="battleExplain" class="battle-explain hidden"></div>
+        <div id="logView"></div>
+      </section>
+    </main>
+
+    <section id="tutorialOverlay" class="tutorial-overlay hidden">
+      <div class="tutorial-card">
+        <div class="tutorial-head">
+          <h2>第一关引导</h2>
+          <button id="skipTutorialBtn">跳过引导</button>
+        </div>
+        <p id="tutorialDesc"></p>
+        <div class="tutorial-progress">
+          <div id="tutorialProgressBar"></div>
+        </div>
+        <p id="tutorialHint" class="muted"></p>
+      </div>
+    </section>
+
+    <section id="battleOverlay" class="battle-overlay hidden">
+      <div class="battle-window">
+        <div class="battle-head">
+          <h2 id="battleTitle">战斗回放</h2>
+          <div class="battle-controls">
+            <button id="battlePauseBtn">暂停</button>
+            <button id="battleSpeedBtn">速度 1x</button>
+            <button id="closeBattleOverlayBtn">关闭</button>
+          </div>
+        </div>
+        <div class="battle-bars">
+          <div class="bar-wrap">
+            <span>我方</span>
+            <div class="hp-bar"><div id="battlePlayerBar"></div></div>
+            <span id="battlePlayerHp">100</span>
+          </div>
+          <div class="bar-wrap">
+            <span>敌方</span>
+            <div class="hp-bar enemy"><div id="battleEnemyBar"></div></div>
+            <span id="battleEnemyHp">100</span>
+          </div>
+        </div>
+        <div id="battleTrack" class="battle-track"></div>
+        <div id="battleTimeline" class="battle-timeline"></div>
+        <div id="battleResult" class="battle-result"></div>
+      </div>
+    </section>
+
+    <script type="module" src="./code/main.js"></script>
+    <script>
+      if (location.protocol === "file:") {
+        const warning = document.getElementById("protocolWarning");
+        if (warning) warning.style.display = "block";
+      }
+    </script>
+  </body>
+</html>
