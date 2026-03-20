@@ -1,5 +1,7 @@
 import { GAME_CONFIG } from "../configs/game.config.js";
+import { getClassById, getLandingById } from "../configs/runDraft.config.js";
 import * as backpackMod from "./backpack.js";
+import { buildPlayerCombatUnits } from "./combat.js";
 import { createPvpService } from "./services/pvpService.js";
 import { createInitialState, getCurrentPhase, log } from "./state.js";
 import {
@@ -11,12 +13,15 @@ import {
   rollShop,
   rollTowerRoute,
   selectTowerNode,
+  getCurrentTowerNodeType,
+  isTowerShopNodeSelected,
   runEvent,
   runExplore,
   settleFloorEconomy,
   applyLateFloorPenalty,
+  tryMergeUnits,
 } from "./pve.js";
-import { bindActions, render, setActionEnabled, setRunButtons } from "./ui.js";
+import { bindActions, openPreRunSelection, render, setActionEnabled, setRunButtons } from "./ui.js";
 import { randInt } from "./utils.js";
 
 const state = createInitialState();
@@ -40,7 +45,8 @@ const rotateItemInBackpack =
 
 function bootstrap() {
   bindActions({
-    onStart: startRun,
+    onOpenPreRun: () => openPreRunSelection(),
+    onConfirmPreRun: beginRun,
     onEnd: endRun,
     onExplore: () => handlePveAction(handleExploreWithTower, "explored"),
     onEvent: () => handlePveAction(handleEventWithTower, "eventUsed"),
@@ -99,10 +105,23 @@ function bootstrap() {
   render(state);
 }
 
-function startRun() {
+function applyLandingBonuses() {
+  const L = getLandingById(state.runMeta.landingId);
+  state.gold += L.goldDelta || 0;
+  state.hp = Math.min(GAME_CONFIG.initialHp, Math.max(1, state.hp + (L.hpDelta || 0)));
+  if (L.manaDelta) state.mana += L.manaDelta;
+  if (L.gearDelta) state.gear += L.gearDelta;
+}
+
+function beginRun(classId, landingId) {
   Object.assign(state, createInitialState());
   state.runActive = true;
   state.runId = `run_${Date.now()}`;
+  state.runMeta = {
+    classId: classId || "class_sentinel",
+    landingId: landingId || "landing_vault",
+  };
+  applyLandingBonuses();
   rollShop(state);
   rollTowerRoute(state);
   autoArrangeBackpack(state);
@@ -110,7 +129,9 @@ function startRun() {
   applyFloorPlanSuggestion();
   setRunButtons(true);
   setActionEnabled(true);
-  log(state, `对局开始：${state.runId}，当前PVP模式=${GAME_CONFIG.pvp.mode}`);
+  const cn = getClassById(state.runMeta.classId).name;
+  const ln = getLandingById(state.runMeta.landingId).name;
+  log(state, `对局开始：${state.runId} ｜ 职业 ${cn} ｜ 落点 ${ln} ｜ PVP=${GAME_CONFIG.pvp.mode}`);
   log(state, "第一关引导已开启：按提示完成一次完整循环");
   render(state);
 }
@@ -134,9 +155,7 @@ function handleEventWithTower(s) {
 }
 
 function getCurrentSelectedNode(s) {
-  const layer = s.tower?.route?.[s.tower?.step] || ["combat"];
-  const idx = Math.max(0, Math.min(layer.length - 1, s.tower?.selectedNode || 0));
-  return layer[idx] || "combat";
+  return getCurrentTowerNodeType(s);
 }
 
 function handleSelectTowerNode(nodeIndex) {
@@ -145,6 +164,9 @@ function handleSelectTowerNode(nodeIndex) {
   if (phase.key !== "PVE_OPEN") return;
   const ok = selectTowerNode(state, nodeIndex);
   if (ok) {
+    const t = getCurrentTowerNodeType(state);
+    if (t === "shop") state.ui.sideTab = "shop";
+    else if (state.ui.sideTab === "shop") state.ui.sideTab = "bag";
     log(state, `已选择路径节点：${state.tower.currentNode}`);
     render(state);
   }
@@ -200,6 +222,7 @@ async function handlePveAction(fn, tutorialMark = "") {
       result: result.battle.win ? "结果：胜利" : "结果：失败",
     };
     await playBattleOverlayTimeline();
+    state.battleOverlay.visible = false;
   }
   if (result?.msg) log(state, result.msg);
   maybeLoseByDeath();
@@ -226,6 +249,17 @@ function setFloorStrategy(strategy) {
 }
 
 function applyFloorPlanSuggestion() {
+  if (
+    state.runActive &&
+    state.floor === 1 &&
+    state.tutorial &&
+    !state.tutorial.skipped &&
+    !state.tutorial.completed
+  ) {
+    state.floorPlan.suggestion =
+      "第一层跟随引导：探索 → 选商店格购买单位/道具 → 背包整理 → 封盘（稳健/贪收益从第2层起完全按策略线生效）";
+    return;
+  }
   state.floorPlan.suggestion =
     state.floorPlan.strategy === "greedy"
       ? "先事件找高收益 -> 购买输出单位 -> 再探索补资源"
@@ -291,6 +325,8 @@ function handleBoardDrop(payload, targetIndex) {
     state.boardSlots[fromIndex] = tmp;
   }
   log(state, "已调整棋盘站位");
+  const merges = tryMergeUnits(state);
+  if (merges.length) log(state, merges.join("；"));
   render(state);
 }
 
@@ -342,21 +378,22 @@ function maybeLoseByDeath() {
   }
 }
 
-async function resolveAsyncPvp() {
-  const result = await pvpService.resolveFloorBattle(state);
+async function applyPvpFetchResult(result) {
   markTutorial("pvpResolved");
   state.lastBattle = result;
   state.battleExplain = null;
+  const overlayTitle =
+    result.source === "fallback" ? "异步PVP回放（回退）" : "异步PVP回放";
   if (result.win) {
     log(
       state,
-      `PVP胜利(${result.source}) 对手=${result.enemyName} 战力${result.report.playerPower} vs ${result.report.enemyPower}`
+      `PVP胜利(${result.source}) 对手=${result.enemyName} 战力${result.report?.playerPower ?? 0} vs ${result.report?.enemyPower ?? 0}`
     );
     state.streak = state.streak >= 0 ? state.streak + 1 : 1;
     const arena = buildArenaFromState("pvp");
     state.battleOverlay = {
       visible: true,
-      title: "异步PVP回放",
+      title: overlayTitle,
       playerHp: result.report?.playerFinalHp ?? 74,
       enemyHp: result.report?.enemyFinalHp ?? 0,
       timeline: result.report?.timeline || [],
@@ -381,7 +418,7 @@ async function resolveAsyncPvp() {
     const arena = buildArenaFromState("pvp");
     state.battleOverlay = {
       visible: true,
-      title: "异步PVP回放",
+      title: overlayTitle,
       playerHp: result.report?.playerFinalHp ?? 0,
       enemyHp: result.report?.enemyFinalHp ?? 28,
       timeline: result.report?.timeline || [],
@@ -390,7 +427,7 @@ async function resolveAsyncPvp() {
       paused: false,
       speed: 1,
       arena,
-      result: "结果：PVP失败",
+      result: result.source === "fallback" ? "结果：小负（保底）" : "结果：PVP失败",
     };
     const latePenalty = applyLateFloorPenalty(state, result);
     if (latePenalty.hpPenalty || latePenalty.badgePenalty) {
@@ -401,50 +438,48 @@ async function resolveAsyncPvp() {
     }
     maybeLoseByDeath();
   }
-  await playBattleOverlayTimeline();
 }
 
 async function resolveAsyncPvpWithGuard() {
   const timeoutMs = 4500;
+  const fetchBattle = () => pvpService.resolveFloorBattle(state);
+
+  let result;
   try {
-    await Promise.race([
-      resolveAsyncPvp(),
+    result = await Promise.race([
+      fetchBattle(),
       new Promise((_, reject) => setTimeout(() => reject(new Error("PVP结算超时")), timeoutMs)),
     ]);
   } catch {
     log(state, "异步匹配与结算超时，系统自动重试一次...");
     try {
-      await Promise.race([
-        resolveAsyncPvp(),
+      result = await Promise.race([
+        fetchBattle(),
         new Promise((_, reject) => setTimeout(() => reject(new Error("PVP重试超时")), timeoutMs)),
       ]);
     } catch {
       log(state, "结算仍超时，已回退为保底结算（判定小负）");
-      state.lastBattle = {
+      result = {
         win: false,
         source: "fallback",
         enemyName: "超时镜像",
         hpDamage: 8,
         badgeLoss: 0,
-        report: { playerPower: 0, enemyPower: 0, timeline: [{ text: "系统回退结算：小负处理", playerHp: 92, enemyHp: 100 }] },
+        report: {
+          playerPower: 0,
+          enemyPower: 0,
+          timeline: [{ text: "结算超时，系统执行保底回退", playerHp: 92, enemyHp: 100 }],
+          playerFinalHp: 92,
+          enemyFinalHp: 100,
+        },
       };
-      state.hp -= 8;
-      state.battleOverlay = {
-        visible: true,
-        title: "异步PVP回放（回退）",
-        playerHp: 92,
-        enemyHp: 100,
-        timeline: [{ text: "结算超时，系统执行保底回退", playerHp: 92, enemyHp: 100 }],
-        renderedTimeline: [],
-        playIndex: 0,
-        paused: false,
-        speed: 1,
-        arena: buildArenaFromState("pvp"),
-        result: "结果：小负（保底）",
-      };
-      await playBattleOverlayTimeline();
     }
   }
+
+  await applyPvpFetchResult(result);
+  await playBattleOverlayTimeline();
+  state.battleOverlay.visible = false;
+  render(state);
 }
 
 async function settleFloorAndAdvance() {
@@ -490,6 +525,9 @@ async function settleFloorAndAdvance() {
   applyFloorPlanSuggestion();
   rollShop(state);
   rollTowerRoute(state);
+  if (!isTowerShopNodeSelected(state)) {
+    state.ui.sideTab = "bag";
+  }
   updateBackpackSummary();
   log(state, `进入楼层 ${state.floor}`);
   setActionEnabled(true);
@@ -530,6 +568,12 @@ function buildLossExplanation(result) {
   if (result.report?.enemyPower > result.report?.playerPower) {
     reasons.push("对手面板战力更高");
     suggests.push("优先买高费输出或触发关键羁绊");
+  }
+  const deployed = state.boardSlots.filter(Boolean).map((id) => state.roster.find((u) => u.instanceId === id)).filter(Boolean);
+  const avgStar = deployed.length ? deployed.reduce((s, u) => s + (u.star || 1), 0) / deployed.length : 0;
+  if (deployed.length >= 3 && avgStar < 1.5) {
+    reasons.push("场上星级偏低，三合一升星未充分利用");
+    suggests.push("同单位凑满 3 个自动合成高星");
   }
   moments.push(`开场战力差：${Math.max(0, (result.report?.enemyPower || 0) - (result.report?.playerPower || 0))}`);
   moments.push(`首个减员时段：前10秒（模拟）`);
@@ -594,19 +638,15 @@ function jumpBattleKeyframe(pos) {
 }
 
 function buildArenaFromState(mode) {
-  const active = state.boardSlots
-    .filter(Boolean)
-    .map((id) => state.roster.find((u) => u.instanceId === id))
-    .filter(Boolean)
-    .slice(0, 7);
-  const fallback = state.roster.slice(0, 4);
-  const base = active.length ? active : fallback;
-  const playerUnits = base.map((u, idx) => ({
+  const bonuses = computeBackpackBonus(state);
+  const lineup = buildPlayerCombatUnits(state, bonuses);
+  const sorted = [...lineup].sort((a, b) => a.col - b.col || b.row - a.row);
+  const playerUnits = sorted.slice(0, 7).map((u, idx) => ({
     id: `p_${u.instanceId || idx}`,
-    sprite: u.sprite || u.icon || "⚔️",
+    sprite: u.sprite || "⚔️",
     image: u.image || null,
-    hp: 100,
-    maxHp: 100,
+    hp: Math.max(1, u.hp),
+    maxHp: Math.max(1, u.maxHp),
   }));
 
   const enemySprites = mode === "pvp" ? ["🛡️", "🏹", "🔮", "🗡️", "⚙️", "🧱", "🕶️"] : ["👾", "💀", "🦂", "👹", "🧟", "🐍", "🕸️"];
@@ -621,6 +661,9 @@ function buildArenaFromState(mode) {
     enemyUnits,
     activeAttackerId: "",
     activeTargetId: "",
+    activeAttackerCol: -1,
+    activeTargetCol: -1,
+    strikeFromPlayerRow: true,
   };
 }
 
@@ -633,6 +676,13 @@ function pickAlive(units) {
   return units.filter((u) => u.hp > 0);
 }
 
+function slotIndexInRow(units, unitId) {
+  const padded = [...units];
+  while (padded.length < 7) padded.push(null);
+  const idx = padded.slice(0, 7).findIndex((u) => u && u.id === unitId);
+  return idx >= 0 ? idx : 3;
+}
+
 function applyArenaStepToOverlay(step, index) {
   const arena = state.battleOverlay?.arena;
   if (!arena) return;
@@ -641,6 +691,9 @@ function applyArenaStepToOverlay(step, index) {
   const enemyAlive = pickAlive(arena.enemyUnits);
   arena.activeAttackerId = "";
   arena.activeTargetId = "";
+  arena.activeAttackerCol = -1;
+  arena.activeTargetCol = -1;
+  arena.strikeFromPlayerRow = true;
 
   if (step.side === "player" || step.side === "item") {
     if (!enemyAlive.length || !playerAlive.length) return;
@@ -650,6 +703,9 @@ function applyArenaStepToOverlay(step, index) {
     target.hp = Math.max(0, target.hp - finalDmg);
     arena.activeAttackerId = attacker.id;
     arena.activeTargetId = target.id;
+    arena.activeAttackerCol = slotIndexInRow(arena.playerUnits, attacker.id);
+    arena.activeTargetCol = slotIndexInRow(arena.enemyUnits, target.id);
+    arena.strikeFromPlayerRow = true;
   } else if (step.side === "enemy") {
     if (!enemyAlive.length || !playerAlive.length) return;
     const attacker = enemyAlive[index % enemyAlive.length];
@@ -657,6 +713,9 @@ function applyArenaStepToOverlay(step, index) {
     target.hp = Math.max(0, target.hp - dmg);
     arena.activeAttackerId = attacker.id;
     arena.activeTargetId = target.id;
+    arena.activeAttackerCol = slotIndexInRow(arena.enemyUnits, attacker.id);
+    arena.activeTargetCol = slotIndexInRow(arena.playerUnits, target.id);
+    arena.strikeFromPlayerRow = false;
   }
 }
 

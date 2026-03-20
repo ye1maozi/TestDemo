@@ -48,7 +48,12 @@ export const GAME_CONFIG = {
   },
   shop: {
     refreshCost: 1,
-    unitCostByTier: { 1: 2, 2: 3, 3: 4, 4: 5 },
+    unitSlots: 5,
+    /** 商店随机单位时各费段权重（相对值） */
+    tierWeights: { 1: 38, 2: 30, 3: 18, 4: 10, 5: 4 },
+    unitCostByTier: { 1: 2, 2: 3, 3: 4, 4: 5, 5: 7 },
     itemCostByRarity: { common: 2, rare: 4, epic: 6 },
   },
+  /** 自走棋升星：相对模板属性的倍数 */
+  starMultipliers: { 1: 1, 2: 1.8, 3: 3.24 },
 };

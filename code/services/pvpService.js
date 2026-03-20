@@ -1,39 +1,68 @@
+import { computeBackpackBonus } from "../backpack.js";
+import { buildGhostEnemyFromPower, buildPlayerCombatUnits, simulateMirrorBattleFromLineups } from "../combat.js";
+
 function buildSnapshot(state) {
   const deployed = state.boardSlots
     .filter(Boolean)
     .map((instanceId) => state.roster.find((u) => u.instanceId === instanceId))
     .filter(Boolean);
   const rosterForBattle = deployed.length ? deployed : state.roster.slice(0, 8);
+  const bonuses = computeBackpackBonus(state);
+  const playerBattleLineup = buildPlayerCombatUnits(state, bonuses);
   return {
     runId: state.runId,
     floor: state.floor,
     hp: state.hp,
     lifeBadge: state.lifeBadge,
     resources: { gold: state.gold, gear: state.gear, mana: state.mana },
-    roster: rosterForBattle.map((u) => ({ id: u.id, tier: u.tier, hp: u.hp, atk: u.atk })),
+    roster: rosterForBattle.map((u) => ({
+      id: u.id,
+      mergeGroupId: u.mergeGroupId,
+      star: u.star || 1,
+      tier: u.tier,
+      hp: u.hp,
+      atk: u.atk,
+      role: u.role,
+      trait: u.trait || [],
+    })),
     board: [...state.boardSlots],
     backpack: state.backpackItems.filter((i) => i.placed).map((i) => ({ id: i.id, rarity: i.rarity })),
+    playerBattleLineup,
+    combatBonuses: {
+      attackProcPct: bonuses.attackProcPct || 0,
+      shieldProc: bonuses.shieldProc || 0,
+      globalHpPct: bonuses.globalHpPct || 0,
+      globalAtkPct: bonuses.globalAtkPct || 0,
+      traitNeedMinus: bonuses.traitNeedMinus || {},
+    },
   };
 }
 
 async function mockProvider(snapshot) {
-  const basePower = snapshot.roster.reduce((sum, u) => sum + u.hp * 0.3 + u.atk * 2, 0);
+  const bonuses = {
+    attackProcPct: snapshot.combatBonuses?.attackProcPct || 0,
+    shieldProc: snapshot.combatBonuses?.shieldProc || 0,
+    globalHpPct: snapshot.combatBonuses?.globalHpPct || 0,
+    globalAtkPct: snapshot.combatBonuses?.globalAtkPct || 0,
+    traitNeedMinus: snapshot.combatBonuses?.traitNeedMinus || {},
+  };
+  const playerUnits = snapshot.playerBattleLineup || [];
+  const basePower = playerUnits.reduce((sum, u) => sum + u.atk * 2 + u.maxHp * 0.35, 0);
   const fakeEnemyPower = 130 + snapshot.floor * 25 + Math.random() * 60;
-  const win = basePower >= fakeEnemyPower;
-  const damage = win ? 0 : Math.floor(8 + (fakeEnemyPower - basePower) / 20);
-  const timeline = [];
-  let pHp = 100;
-  let eHp = 100;
-  for (let i = 1; i <= 5; i += 1) {
-    const pHit = Math.max(6, Math.round(12 + (basePower / 50) * (0.7 + Math.random() * 0.5)));
-    eHp -= pHit;
-    timeline.push({ side: "player", text: `R${i} 我方造成 ${pHit}`, playerHp: Math.max(0, pHp), enemyHp: Math.max(0, eHp) });
-    if (eHp <= 0) break;
-    const eHit = Math.max(6, Math.round(11 + (fakeEnemyPower / 55) * (0.7 + Math.random() * 0.5)));
-    pHp -= eHit;
-    timeline.push({ side: "enemy", text: `R${i} 敌方造成 ${eHit}`, playerHp: Math.max(0, pHp), enemyHp: Math.max(0, eHp) });
-    if (pHp <= 0) break;
-  }
+  const enemies = buildGhostEnemyFromPower(snapshot.floor, fakeEnemyPower);
+  const battle = simulateMirrorBattleFromLineups(playerUnits, enemies, bonuses);
+  const win = battle.win;
+  const damage = win ? 0 : Math.floor(8 + Math.max(0, fakeEnemyPower - basePower) / 18);
+  const pPct = battle.playerHp ?? 50;
+  const ePct = battle.enemyHp ?? 50;
+  const timeline = (battle.timeline && battle.timeline.length
+    ? battle.timeline
+    : [{ side: "player", text: "战斗结算", playerHp: pPct, enemyHp: ePct }]
+  ).map((step) => ({
+    ...step,
+    playerHp: typeof step.playerHp === "number" ? step.playerHp : pPct,
+    enemyHp: typeof step.enemyHp === "number" ? step.enemyHp : ePct,
+  }));
   return {
     ok: true,
     source: "mock",
@@ -45,8 +74,8 @@ async function mockProvider(snapshot) {
       playerPower: Math.round(basePower),
       enemyPower: Math.round(fakeEnemyPower),
       timeline,
-      playerFinalHp: Math.max(0, pHp),
-      enemyFinalHp: Math.max(0, eHp),
+      playerFinalHp: pPct,
+      enemyFinalHp: ePct,
     },
   };
 }
@@ -91,7 +120,6 @@ export function createPvpService(config) {
         const result = await serverProvider(snapshot, config.endpoint, config.timeoutMs);
         if (result.ok) return result;
       }
-      // 回退策略：server失败时自动切mock，减少后续切换开发量
       return mockProvider(snapshot);
     },
   };

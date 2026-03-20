@@ -68,8 +68,10 @@ body {
   border: 1px solid #2a4478;
   background: rgba(12, 20, 38, 0.92);
   display: grid;
-  grid-template-columns: repeat(9, minmax(92px, 1fr));
+  grid-template-columns: repeat(11, minmax(72px, 1fr));
   gap: 8px;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
 }
 
 .hud-card {
@@ -92,12 +94,31 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 280px 1fr 320px;
-  gap: 12px;
+  grid-template-columns: minmax(300px, 0.95fr) minmax(0, 2.2fr) minmax(300px, 1fr);
+  gap: 14px;
   padding: 12px;
   align-items: start;
-  max-width: 1600px;
+  max-width: 1680px;
   margin: 0 auto;
+}
+
+/* 避免宽路径金字塔或子像素溢出时与棋盘/侧栏命中框重叠，保证右侧商店可点 */
+.layout > .left-column {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.layout > .board {
+  position: relative;
+  z-index: 0;
+  min-width: 0;
+}
+
+.layout > .side {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
 }
 
 .panel {
@@ -176,15 +197,20 @@ body {
   pointer-events: none;
 }
 
-.status-compact #runStatus {
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
+.path-panel {
+  min-height: 0;
 }
 
-.status-compact h2,
-.status-compact h3 {
-  font-size: 14px;
-  margin-bottom: 6px;
+.path-panel-lead {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.path-panel-title {
+  font-size: 15px;
+  margin: 0 0 8px 0;
+  color: #dbe9ff;
 }
 
 .actions-compact .strategy-row {
@@ -199,9 +225,9 @@ body {
 .floor-suggestion-one-line {
   font-size: 11px;
   margin: 4px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .node-preview-mini {
@@ -211,7 +237,7 @@ body {
 
 .action-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -272,12 +298,6 @@ button:disabled {
 .muted {
   color: var(--muted);
   font-size: 12px;
-}
-
-#runStatus {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(100px, 1fr));
-  gap: 7px;
 }
 
 #boardView {
@@ -356,6 +376,17 @@ button:disabled {
   border: 1px solid #5273ae;
   border-radius: 999px;
   padding: 1px 4px;
+}
+
+.unit-star {
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  font-size: 8px;
+  line-height: 1;
+  color: #ffd36b;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  letter-spacing: -1px;
 }
 
 .board-empty-dot {
@@ -439,6 +470,33 @@ button:disabled {
   gap: 8px;
   align-items: center;
   margin-bottom: 4px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.stash-item-head img {
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.bag-drag-ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  padding: 6px 12px;
+  background: rgba(16, 28, 52, 0.96);
+  border: 1px solid #5de5ff;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #dbf7ff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+body.bag-pointer-dragging {
+  cursor: grabbing !important;
 }
 
 .stash-item-pic {
@@ -833,115 +891,166 @@ button:disabled {
   background: linear-gradient(180deg, #0a1326 0%, #0a1120 100%);
   padding: 8px;
   margin-bottom: 8px;
+  overflow: visible;
 }
 
-/* 战斗浮窗：A 放大移向 B 并攻击一下 */
-.battle-attack-float {
+/* 战斗回放：在棋盘内直接播放攻击者冲向被攻击者 */
+.battle-arena.battle-playing-strike .arena-row {
+  overflow: visible;
+}
+
+.battle-arena.battle-playing-strike .arena-unit.attacker {
+  transition: none;
+}
+
+/* 攻击者沿水平+垂直移向目标列（--dx-col = 目标列-攻击者列，单位≈一格宽） */
+.battle-arena.battle-playing-strike .arena-unit.player.attacker[data-strike-dir="up"]:not(.dead) {
+  animation: arena-strike-toward-up 0.95s cubic-bezier(0.33, 1, 0.68, 1) both;
+  z-index: 4;
+  position: relative;
+  box-shadow: 0 0 0 2px rgba(93, 229, 255, 0.55);
+}
+
+.battle-arena.battle-playing-strike .arena-unit.enemy.attacker[data-strike-dir="down"]:not(.dead) {
+  animation: arena-strike-toward-down 0.95s cubic-bezier(0.33, 1, 0.68, 1) both;
+  z-index: 4;
+  position: relative;
+  box-shadow: 0 0 0 2px rgba(255, 140, 160, 0.55);
+}
+
+.battle-arena.battle-playing-strike .arena-unit.player.attacker[data-strike-dir="up"]:not(.dead)::after {
+  content: "";
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 12;
+  top: 0;
+  width: 4px;
+  height: 0;
+  margin-left: -2px;
+  background: linear-gradient(180deg, rgba(93, 229, 255, 0.95), transparent);
+  border-radius: 2px;
+  animation: arena-slash-up 0.38s ease 0.34s both;
   pointer-events: none;
 }
 
-.battle-attack-float.hidden {
-  display: none !important;
-}
-
-.battle-attack-float:not(.hidden) {
-  display: block;
-}
-
-.attack-float-inner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  padding: 16px 24px;
-  background: rgba(10, 18, 35, 0.92);
-  border: 1px solid #3d6bb8;
-  border-radius: 12px;
-  box-shadow: 0 0 24px rgba(93, 229, 255, 0.15);
-  min-width: 200px;
-}
-
-.attack-attacker,
-.attack-target {
-  width: 56px;
-  height: 56px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: #0f1b33;
-  border: 1px solid #3a5b98;
-}
-
-.attack-attacker {
-  transition: transform 0.35s ease-out;
-}
-
-.battle-attack-float.attack-active .attack-attacker {
-  transform: scale(1.35) translateX(42px);
-  border-color: #5de5ff;
-  box-shadow: 0 0 12px rgba(93, 229, 255, 0.4);
-}
-
-.attack-target {
-  transition: box-shadow 0.15s ease, filter 0.15s ease;
-}
-
-.battle-attack-float.attack-active .attack-target {
-  animation: attack-target-hit 0.25s ease 0.3s both;
-}
-
-.attack-arrow {
-  font-size: 20px;
-  color: var(--muted);
-  opacity: 0.8;
-}
-
-.attack-hit-effect {
+.battle-arena.battle-playing-strike .arena-unit.enemy.attacker[data-strike-dir="down"]:not(.dead)::after {
+  content: "";
   position: absolute;
   left: 50%;
-  top: 50%;
-  width: 80px;
-  height: 80px;
-  margin: -40px 0 0 -40px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 120, 140, 0.5) 0%, transparent 70%);
-  opacity: 0;
+  bottom: 0;
+  width: 4px;
+  height: 0;
+  margin-left: -2px;
+  background: linear-gradient(0deg, rgba(255, 140, 160, 0.95), transparent);
+  border-radius: 2px;
+  animation: arena-slash-down 0.38s ease 0.34s both;
   pointer-events: none;
 }
 
-.battle-attack-float.attack-active .attack-hit-effect {
-  animation: attack-flash 0.4s ease 0.32s both;
+.battle-arena.battle-playing-strike .arena-unit.target:not(.dead) {
+  animation: arena-take-hit 0.45s ease 0.38s both;
+  position: relative;
+  z-index: 3;
+  outline: 2px solid rgba(255, 160, 170, 0.85);
+  outline-offset: 1px;
 }
 
-@keyframes attack-target-hit {
-  0% { filter: brightness(1); box-shadow: 0 0 0 0 rgba(255, 126, 143, 0); }
-  30% { filter: brightness(1.4); box-shadow: 0 0 0 4px rgba(255, 126, 143, 0.5); }
-  100% { filter: brightness(1); box-shadow: 0 0 0 0 rgba(255, 126, 143, 0); }
+.arena-hit-badge {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #ffccd4;
+  background: rgba(80, 20, 35, 0.92);
+  border: 1px solid #ff8a9a;
+  border-radius: 4px;
+  padding: 1px 4px;
+  white-space: nowrap;
+  z-index: 5;
+  pointer-events: none;
 }
 
-@keyframes attack-flash {
-  0% { opacity: 0; transform: scale(0.5); }
-  40% { opacity: 0.9; transform: scale(1.2); }
-  100% { opacity: 0; transform: scale(1.5); }
+@keyframes arena-strike-toward-up {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  42% {
+    transform: translate(calc(var(--dx-col, 0) * 100%), -46px) scale(1.24);
+  }
+  58% {
+    transform: translate(calc(var(--dx-col, 0) * 92%), -40px) scale(1.22);
+  }
+  76% {
+    transform: translate(calc(var(--dx-col, 0) * 45%), -22px) scale(1.1);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
 }
 
-.attack-attacker img,
-.attack-target img {
-  width: 48px;
-  height: 48px;
-  object-fit: contain;
+@keyframes arena-strike-toward-down {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  42% {
+    transform: translate(calc(var(--dx-col, 0) * 100%), 46px) scale(1.24);
+  }
+  58% {
+    transform: translate(calc(var(--dx-col, 0) * 92%), 40px) scale(1.22);
+  }
+  76% {
+    transform: translate(calc(var(--dx-col, 0) * 45%), 22px) scale(1.1);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
 }
 
-.attack-attacker .arena-sprite,
-.attack-target .arena-sprite {
-  font-size: 28px;
+@keyframes arena-slash-up {
+  0% {
+    height: 0;
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    height: 48px;
+    opacity: 0;
+  }
+}
+
+@keyframes arena-slash-down {
+  0% {
+    height: 0;
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    height: 48px;
+    opacity: 0;
+  }
+}
+
+@keyframes arena-take-hit {
+  0% {
+    filter: brightness(1);
+    box-shadow: 0 0 0 0 rgba(255, 120, 140, 0);
+  }
+  45% {
+    filter: brightness(1.45);
+    box-shadow: 0 0 0 5px rgba(255, 120, 140, 0.5);
+    transform: scale(0.92);
+  }
+  100% {
+    filter: brightness(1);
+    box-shadow: 0 0 0 0 rgba(255, 120, 140, 0);
+    transform: scale(1);
+  }
 }
 
 .arena-row {
@@ -1019,7 +1128,12 @@ button:disabled {
 }
 
 #towerRoute {
-  margin-top: 6px;
+  margin-top: 4px;
+  max-height: min(48vh, 480px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .tower-route {
@@ -1029,10 +1143,24 @@ button:disabled {
   margin-bottom: 6px;
 }
 
+.tower-route.tower-route-pyramid {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+}
+
+.tower-route-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
 .tower-layer {
   display: grid;
-  grid-template-columns: repeat(3, minmax(56px, 1fr));
+  grid-template-columns: repeat(var(--tower-cols, 3), minmax(40px, 1fr));
   gap: 6px;
+  align-items: stretch;
+  justify-items: stretch;
 }
 
 .route-node {
@@ -1074,6 +1202,15 @@ button:disabled {
   opacity: 0.55;
 }
 
+.route-node.route-blocked {
+  opacity: 0.42;
+  filter: grayscale(0.35);
+}
+
+.route-node.route-future {
+  opacity: 0.72;
+}
+
 #logView {
   max-height: 420px;
   overflow: auto;
@@ -1098,10 +1235,12 @@ button:disabled {
 
 .tutorial-overlay {
   position: fixed;
-  right: 16px;
+  left: 50%;
   bottom: 16px;
-  width: min(420px, calc(100vw - 32px));
-  z-index: 20;
+  transform: translateX(-50%);
+  width: min(400px, calc(100vw - 32px));
+  z-index: 25;
+  pointer-events: auto;
 }
 
 .tutorial-card {
@@ -1156,4 +1295,106 @@ button:disabled {
   .hud-strip {
     grid-template-columns: repeat(3, minmax(90px, 1fr));
   }
+}
+
+/* 开局职业 / 落点 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(4, 8, 18, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+
+.modal-overlay.hidden {
+  display: none;
+}
+
+.modal-card.pre-run-modal {
+  max-width: 520px;
+  width: 100%;
+  background: linear-gradient(165deg, #152542 0%, #0d1528 100%);
+  border: 1px solid #3a5a9a;
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.pre-run-modal h2 {
+  margin: 0 0 6px 0;
+  font-size: 20px;
+}
+
+.pre-run-lead {
+  margin: 0 0 16px 0;
+  font-size: 13px;
+}
+
+.pre-run-section h3 {
+  margin: 12px 0 8px 0;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pre-run-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pre-run-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #2c4272;
+  background: rgba(10, 18, 36, 0.65);
+  cursor: pointer;
+}
+
+.pre-run-option:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(45, 120, 160, 0.12);
+}
+
+.pre-run-option input {
+  margin-top: 4px;
+}
+
+.pre-run-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.pre-run-option-body strong {
+  font-size: 14px;
+}
+
+.pre-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.ghost-btn {
+  background: transparent;
+  border: 1px solid #4a5f8f;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.ghost-btn:hover {
+  color: var(--text);
+  border-color: var(--muted);
 }

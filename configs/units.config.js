@@ -1,15 +1,17 @@
 import { getUnitPixelArt } from "../code/pixelArt.js";
 
-// 单位图片：优先本地图；否则使用程序生成的像素画占位
 function unitImage(id, icon, tint = "#7fc7ff") {
   const base = typeof window !== "undefined" && window.__BASE__ ? window.__BASE__ : "";
   if (base) return `${base}assets/units/${id}.png`;
   return getUnitPixelArt(id, tint) || `https://placehold.co/80x80/1a2a4a/7fc7ff?text=${encodeURIComponent(icon)}`;
 }
 
+/** 全费段卡池；mergeGroupId 用于三合一升星（同组同星级×3 → 升一星） */
 export const UNIT_CONFIG = [
+  // —— 1 费 ——
   {
     id: "u_guard",
+    mergeGroupId: "u_guard",
     name: "铁卫",
     icon: "🛡️",
     sprite: "🛡️",
@@ -23,6 +25,7 @@ export const UNIT_CONFIG = [
   },
   {
     id: "u_archer",
+    mergeGroupId: "u_archer",
     name: "巡林射手",
     icon: "🏹",
     sprite: "🏹",
@@ -35,7 +38,51 @@ export const UNIT_CONFIG = [
     trait: ["ranger", "elf"],
   },
   {
+    id: "u_pawn",
+    mergeGroupId: "u_pawn",
+    name: "征召兵",
+    icon: "🪖",
+    sprite: "🪖",
+    image: unitImage("u_pawn", "🪖", "#aab8d9"),
+    tint: "#aab8d9",
+    tier: 1,
+    role: "midline",
+    hp: 95,
+    atk: 16,
+    trait: ["fighter", "human"],
+  },
+  {
+    id: "u_acolyte",
+    mergeGroupId: "u_acolyte",
+    name: "见习术师",
+    icon: "✨",
+    sprite: "✨",
+    image: unitImage("u_acolyte", "✨", "#d4b5ff"),
+    tint: "#d4b5ff",
+    tier: 1,
+    role: "backline",
+    hp: 70,
+    atk: 18,
+    trait: ["mage", "human"],
+  },
+  {
+    id: "u_sapper",
+    mergeGroupId: "u_sapper",
+    name: "工兵",
+    icon: "🔧",
+    sprite: "🔧",
+    image: unitImage("u_sapper", "🔧", "#c9d86e"),
+    tint: "#c9d86e",
+    tier: 1,
+    role: "midline",
+    hp: 88,
+    atk: 15,
+    trait: ["engineer", "human"],
+  },
+  // —— 2 费 ——
+  {
     id: "u_mech",
+    mergeGroupId: "u_mech",
     name: "齿轮术士",
     icon: "⚙️",
     sprite: "⚙️",
@@ -49,6 +96,7 @@ export const UNIT_CONFIG = [
   },
   {
     id: "u_monk",
+    mergeGroupId: "u_monk",
     name: "灰烬武僧",
     icon: "🥋",
     sprite: "🥋",
@@ -61,7 +109,37 @@ export const UNIT_CONFIG = [
     trait: ["fighter", "human"],
   },
   {
+    id: "u_skirmisher",
+    mergeGroupId: "u_skirmisher",
+    name: "林冠猎手",
+    icon: "🎯",
+    sprite: "🎯",
+    image: unitImage("u_skirmisher", "🎯", "#7be2a5"),
+    tint: "#7be2a5",
+    tier: 2,
+    role: "backline",
+    hp: 85,
+    atk: 24,
+    trait: ["ranger", "elf"],
+  },
+  {
+    id: "u_bulwark",
+    mergeGroupId: "u_bulwark",
+    name: "盾墙卫",
+    icon: "🧱",
+    sprite: "🧱",
+    image: unitImage("u_bulwark", "🧱", "#6ea9ff"),
+    tint: "#6ea9ff",
+    tier: 2,
+    role: "frontline",
+    hp: 140,
+    atk: 12,
+    trait: ["sentinel", "human"],
+  },
+  // —— 3 费 ——
+  {
     id: "u_mage",
+    mergeGroupId: "u_mage",
     name: "虚空术师",
     icon: "🔮",
     sprite: "🔮",
@@ -75,6 +153,7 @@ export const UNIT_CONFIG = [
   },
   {
     id: "u_knight",
+    mergeGroupId: "u_knight",
     name: "暮色骑士",
     icon: "🗡️",
     sprite: "🗡️",
@@ -87,7 +166,37 @@ export const UNIT_CONFIG = [
     trait: ["sentinel", "night"],
   },
   {
+    id: "u_warlock",
+    mergeGroupId: "u_warlock",
+    name: "裂隙术士",
+    icon: "🌑",
+    sprite: "🌑",
+    image: unitImage("u_warlock", "🌑", "#9b7aff"),
+    tint: "#9b7aff",
+    tier: 3,
+    role: "backline",
+    hp: 92,
+    atk: 28,
+    trait: ["mage", "void"],
+  },
+  {
+    id: "u_drone",
+    mergeGroupId: "u_drone",
+    name: "巡游机蜂",
+    icon: "🐝",
+    sprite: "🐝",
+    image: unitImage("u_drone", "🐝", "#f6d56f"),
+    tint: "#f6d56f",
+    tier: 3,
+    role: "midline",
+    hp: 100,
+    atk: 26,
+    trait: ["machine", "engineer"],
+  },
+  // —— 4 费 ——
+  {
     id: "u_assassin",
+    mergeGroupId: "u_assassin",
     name: "影缝者",
     icon: "🕶️",
     sprite: "🕶️",
@@ -101,10 +210,11 @@ export const UNIT_CONFIG = [
   },
   {
     id: "u_titan",
+    mergeGroupId: "u_titan",
     name: "巨像",
-    icon: "🧱",
-    sprite: "🧱",
-    image: unitImage("u_titan", "🧱", "#ffc178"),
+    icon: "🏛️",
+    sprite: "🏛️",
+    image: unitImage("u_titan", "🏛️", "#ffc178"),
     tint: "#ffc178",
     tier: 4,
     role: "frontline",
@@ -112,7 +222,52 @@ export const UNIT_CONFIG = [
     atk: 21,
     trait: ["machine", "sentinel"],
   },
+  {
+    id: "u_reaper",
+    mergeGroupId: "u_reaper",
+    name: "虚空收割",
+    icon: "💀",
+    sprite: "💀",
+    image: unitImage("u_reaper", "💀", "#aa88ff"),
+    tint: "#aa88ff",
+    tier: 4,
+    role: "backline",
+    hp: 85,
+    atk: 38,
+    trait: ["assassin", "void"],
+  },
+  // —— 5 费 ——
+  {
+    id: "u_leviathan",
+    mergeGroupId: "u_leviathan",
+    name: "塔骸巨械",
+    icon: "🤖",
+    sprite: "🤖",
+    image: unitImage("u_leviathan", "🤖", "#ffb347"),
+    tint: "#ffb347",
+    tier: 5,
+    role: "frontline",
+    hp: 240,
+    atk: 28,
+    trait: ["machine", "sentinel"],
+  },
+  {
+    id: "u_sovereign",
+    mergeGroupId: "u_sovereign",
+    name: "终焉典仪",
+    icon: "👁️",
+    sprite: "👁️",
+    image: unitImage("u_sovereign", "👁️", "#e8a0ff"),
+    tint: "#e8a0ff",
+    tier: 5,
+    role: "backline",
+    hp: 110,
+    atk: 45,
+    trait: ["mage", "void"],
+  },
 ];
+
+export const UNIT_BY_MERGE_GROUP = Object.fromEntries(UNIT_CONFIG.map((u) => [u.mergeGroupId || u.id, u]));
 
 export const TRAIT_BONUS = {
   sentinel: { need: 2, bonus: { hpPct: 0.12 } },
@@ -121,4 +276,9 @@ export const TRAIT_BONUS = {
   machine: { need: 2, bonus: { hpPct: 0.1, atkPct: 0.08 } },
   night: { need: 2, bonus: { atkPct: 0.12 } },
   human: { need: 2, bonus: { hpPct: 0.06 } },
+  elf: { need: 2, bonus: { atkPct: 0.08 } },
+  void: { need: 2, bonus: { atkPct: 0.1 } },
+  fighter: { need: 2, bonus: { hpPct: 0.08, atkPct: 0.06 } },
+  engineer: { need: 2, bonus: { atkPct: 0.1 } },
+  assassin: { need: 2, bonus: { atkPct: 0.14 } },
 };

@@ -1,4 +1,11 @@
 import { GAME_CONFIG } from "../configs/game.config.js";
+import { CLASS_OPTIONS, LANDING_OPTIONS, getClassById, getLandingById } from "../configs/runDraft.config.js";
+import {
+  getCurrentTowerNodeType,
+  getTowerCellType,
+  getValidTowerNodeIndices,
+  isTowerShopNodeSelected,
+} from "./pve.js";
 import { getNodePixelArt } from "./pixelArt.js";
 import { getCurrentPhase } from "./state.js";
 
@@ -6,8 +13,58 @@ function el(id) {
   return document.getElementById(id);
 }
 
+function wirePreRunModal(handlers) {
+  const modal = el("preRunModal");
+  if (!modal || modal.dataset.wired === "1") return;
+  modal.dataset.wired = "1";
+  el("preRunConfirmBtn")?.addEventListener("click", () => {
+    const c = modal.querySelector('input[name="preRunClass"]:checked')?.value || CLASS_OPTIONS[0].id;
+    const l = modal.querySelector('input[name="preRunLanding"]:checked')?.value || LANDING_OPTIONS[0].id;
+    modal.classList.add("hidden");
+    handlers.onConfirmPreRun?.(c, l);
+  });
+  el("preRunCancelBtn")?.addEventListener("click", () => modal.classList.add("hidden"));
+}
+
+export function openPreRunSelection() {
+  const modal = el("preRunModal");
+  if (!modal) return;
+  fillPreRunOptions();
+  modal.classList.remove("hidden");
+}
+
+function fillPreRunOptions() {
+  const classBox = el("preRunClassOptions");
+  const landBox = el("preRunLandingOptions");
+  if (classBox) {
+    classBox.innerHTML = CLASS_OPTIONS.map(
+      (c, i) => `
+      <label class="pre-run-option">
+        <input type="radio" name="preRunClass" value="${c.id}" ${i === 0 ? "checked" : ""} />
+        <span class="pre-run-option-body">
+          <strong>${c.name}</strong>
+          <span class="muted">${c.blurb}</span>
+        </span>
+      </label>`
+    ).join("");
+  }
+  if (landBox) {
+    landBox.innerHTML = LANDING_OPTIONS.map(
+      (l, i) => `
+      <label class="pre-run-option">
+        <input type="radio" name="preRunLanding" value="${l.id}" ${i === 0 ? "checked" : ""} />
+        <span class="pre-run-option-body">
+          <strong>${l.name}</strong>
+          <span class="muted">${l.blurb}</span>
+        </span>
+      </label>`
+    ).join("");
+  }
+}
+
 export function bindActions(handlers) {
-  el("startRunBtn").addEventListener("click", handlers.onStart);
+  wirePreRunModal(handlers);
+  el("startRunBtn").addEventListener("click", () => handlers.onOpenPreRun?.());
   el("endRunBtn").addEventListener("click", handlers.onEnd);
   el("exploreBtn").addEventListener("click", handlers.onExplore);
   el("eventBtn").addEventListener("click", handlers.onEvent);
@@ -65,7 +122,13 @@ export function bindActions(handlers) {
       itemId: dragNode.dataset.dragItemId,
       fromBoardIndex: dragNode.dataset.fromBoardIndex ?? "",
     };
-    event.dataTransfer?.setData("application/json", JSON.stringify(payload));
+    const json = JSON.stringify(payload);
+    try {
+      event.dataTransfer?.setData("application/json", json);
+      event.dataTransfer?.setData("text/plain", json);
+    } catch (_) {
+      event.dataTransfer?.setData("text/plain", json);
+    }
     event.dataTransfer.effectAllowed = "move";
   });
 
@@ -93,14 +156,91 @@ export function bindActions(handlers) {
     event.preventDefault();
     zone?.classList.remove("drag-over");
     bagZone?.classList.remove("drag-over");
-    const raw = event.dataTransfer?.getData("application/json");
+    let raw = event.dataTransfer?.getData("application/json");
+    if (!raw) raw = event.dataTransfer?.getData("text/plain");
     if (!raw) return;
-    const payload = JSON.parse(raw);
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch (_) {
+      return;
+    }
     if (zone) {
       handlers.onBoardDrop(payload, Number(zone.dataset.boardDropIndex));
     } else if (bagZone) {
       handlers.onBagDrop(payload, Number(bagZone.dataset.bagDropCol), Number(bagZone.dataset.bagDropRow));
     }
+  });
+
+  wireBagItemPointerDrag(handlers);
+}
+
+/** 指针拖拽背包道具（兼容不支持/异常 HTML5 DnD 的浏览器） */
+function wireBagItemPointerDrag(handlers) {
+  let drag = null;
+  const stash = () => el("backpackStash");
+  const minMove = 5;
+
+  const clearHighlights = () => {
+    document.querySelectorAll(".bag-cell.drag-over").forEach((c) => c.classList.remove("drag-over"));
+  };
+
+  const onMove = (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (!drag.started) {
+      if (dx * dx + dy * dy < minMove * minMove) return;
+      drag.started = true;
+      document.body.classList.add("bag-pointer-dragging");
+      drag.ghost = document.createElement("div");
+      drag.ghost.className = "bag-drag-ghost";
+      const label = drag.head.querySelector(".stash-item-name")?.textContent?.trim()?.slice(0, 8) || "道具";
+      drag.ghost.textContent = label;
+      document.body.appendChild(drag.ghost);
+    }
+    if (drag.ghost) {
+      drag.ghost.style.left = `${e.clientX + 10}px`;
+      drag.ghost.style.top = `${e.clientY + 10}px`;
+    }
+    clearHighlights();
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = under?.closest?.("[data-bag-drop-col]");
+    if (cell) cell.classList.add("drag-over");
+  };
+
+  const onUp = (e) => {
+    if (!drag) return;
+    clearHighlights();
+    document.body.classList.remove("bag-pointer-dragging");
+    if (drag.ghost) {
+      drag.ghost.remove();
+      drag.ghost = null;
+    }
+    if (drag.started) {
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      const bagZone = under?.closest?.("[data-bag-drop-col]");
+      if (bagZone) {
+        handlers.onBagDrop(
+          { kind: "item", itemId: drag.itemId, unitId: "", fromBoardIndex: "" },
+          Number(bagZone.dataset.bagDropCol),
+          Number(bagZone.dataset.bagDropRow)
+        );
+      }
+    }
+    drag = null;
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+  };
+
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    const head = e.target.closest?.(".stash-item-head[data-drag-item-id]");
+    if (!head || !stash()?.contains(head)) return;
+    if (e.target.closest("button")) return;
+    drag = { itemId: head.dataset.dragItemId, head, x: e.clientX, y: e.clientY, started: false, ghost: null };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   });
 }
 
@@ -115,8 +255,20 @@ export function setRunButtons(active) {
   el("endRunBtn").disabled = !active;
 }
 
+function applyTutorialSideTab(state) {
+  if (!state.runActive || state.floor !== 1 || state.tutorial?.skipped || state.tutorial?.completed) return;
+  const m = state.tutorial.actionMarks;
+  if (m.boughtItem && !m.arranged) {
+    state.ui.sideTab = "bag";
+    return;
+  }
+  if ((!m.boughtUnit || !m.boughtItem) && isTowerShopNodeSelected(state)) {
+    state.ui.sideTab = "shop";
+  }
+}
+
 export function render(state) {
-  renderStatus(state);
+  applyTutorialSideTab(state);
   renderHud(state);
   renderSideTabs(state);
   renderTowerRoute(state);
@@ -131,7 +283,14 @@ export function render(state) {
 }
 
 function renderSideTabs(state) {
-  const current = state.ui?.sideTab || "shop";
+  const showShopTab = isTowerShopNodeSelected(state);
+  const shopBtn = el("sideTabShopBtn");
+  if (shopBtn) {
+    shopBtn.classList.toggle("hidden", !showShopTab);
+    shopBtn.toggleAttribute("hidden", !showShopTab);
+  }
+  const raw = state.ui?.sideTab || "bag";
+  const current = !showShopTab && raw === "shop" ? "bag" : raw;
   const tabs = [
     { id: "sideTabShopBtn", key: "shop" },
     { id: "sideTabBagBtn", key: "bag" },
@@ -140,25 +299,12 @@ function renderSideTabs(state) {
   tabs.forEach((t) => {
     const btn = el(t.id);
     if (!btn) return;
+    if (t.key === "shop" && !showShopTab) return;
     btn.classList.toggle("active", t.key === current);
   });
   el("sideShopPanel")?.classList.toggle("hidden", current !== "shop");
   el("sideBagPanel")?.classList.toggle("hidden", current !== "bag");
   el("sideLogPanel")?.classList.toggle("hidden", current !== "log");
-}
-
-function renderStatus(state) {
-  const phase = getCurrentPhase(state);
-  const html = `
-    <div><span class="tag">Run</span>${(state.runId || "-").slice(-6)}</div>
-    <div><span class="tag">层</span>${state.floor}/${GAME_CONFIG.finalFloor}</div>
-    <div><span class="tag">阶段</span>${phase.label}</div>
-    <div><span class="tag">❤</span>${state.hp}</div>
-    <div><span class="tag">徽记</span>${state.lifeBadge}</div>
-    <div><span class="tag">💰</span>${state.gold}</div>
-    <div><span class="tag">存活</span>${state.mockAliveCount}</div>
-  `;
-  el("runStatus").innerHTML = html;
 }
 
 function renderHud(state) {
@@ -172,6 +318,12 @@ function renderHud(state) {
   el("hudGear").textContent = `${state.gear}`;
   el("hudMana").textContent = `${state.mana}`;
   el("hudAlive").textContent = `${state.mockAliveCount}`;
+  const clsName = state.runActive && state.runMeta?.classId ? getClassById(state.runMeta.classId).name : "-";
+  const landName = state.runActive && state.runMeta?.landingId ? getLandingById(state.runMeta.landingId).name : "-";
+  const hudClass = el("hudClass");
+  const hudLand = el("hudLanding");
+  if (hudClass) hudClass.textContent = clsName;
+  if (hudLand) hudLand.textContent = landName;
   if (state.floor >= 7) {
     el("hudPhase").classList.add("bad");
   } else {
@@ -193,25 +345,53 @@ function renderTowerRoute(state) {
     el("towerRoute").innerHTML = "<span class='muted'>本层路径未生成</span>";
     return;
   }
+  const phase = getCurrentPhase(state);
+  const canPick = state.runActive && phase.key === "PVE_OPEN";
+  const step = state.tower.step ?? 0;
+  const validNow = getValidTowerNodeIndices(state);
+  const cols = (layer) => Math.max(1, (layer || []).length);
   const html = route
     .map((layer, idx) => {
       const layerNodes = (layer || [])
-        .map((node, nodeIdx) => {
+        .map((cell, nodeIdx) => {
+          const node = getTowerCellType(cell);
           const meta = map[node] || { icon: "•", text: node, color: "3a4a5a" };
-          const isDone = idx < state.tower.step;
-          const isCurrent = idx === state.tower.step;
-          const isPicked = isCurrent && nodeIdx === (state.tower.selectedNode || 0);
-          const cls = `route-node ${isDone ? "done" : ""} ${isCurrent ? "current" : ""} ${isPicked ? "picked" : ""}`.trim();
-          const disabled = isCurrent ? "" : "disabled";
-          const nodeImg = getNodePixelArt(node) || `https://placehold.co/40x40/${meta.color || "2a3a4a"}/8b9dc3?text=${encodeURIComponent(meta.icon)}`;
-          return `<button class="${cls} has-tip" ${disabled} data-select-node-index="${nodeIdx}" data-tip="节点：${meta.text}\n第${idx + 1}步可选分支"><img class="route-node-img" src="${nodeImg}" alt=""><span class="route-node-text">${meta.text}</span></button>`;
+          const isDone = idx < step;
+          const isCurrent = idx === step;
+          const pathCol = state.tower.pathColumns?.[idx];
+          const pickedHere = isDone && pathCol === nodeIdx;
+          const pickedCurrent = isCurrent && nodeIdx === (state.tower.selectedNode || 0);
+          const reachable = isCurrent && validNow.includes(nodeIdx);
+          const cls = [
+            "route-node",
+            "has-tip",
+            isDone ? "done" : "",
+            isCurrent ? "current" : "",
+            pickedHere || pickedCurrent ? "picked" : "",
+            isCurrent && !reachable ? "route-blocked" : "",
+            idx > step ? "route-future" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          const canClick = canPick && isCurrent && reachable;
+          const disabled = canClick ? "" : "disabled";
+          const nodeImg =
+            getNodePixelArt(node) ||
+            `https://placehold.co/40x40/${meta.color || "2a3a4a"}/8b9dc3?text=${encodeURIComponent(meta.icon)}`;
+          const tip =
+            idx > step
+              ? `预览：${meta.text}\n到达该层后可从相连岔路进入`
+              : isCurrent && !reachable
+                ? `不可达：${meta.text}\n请从上一层已走格子连过来的岔路选择`
+                : `节点：${meta.text}\n第${idx + 1}层${isCurrent ? "（点击选择）" : ""}`;
+          return `<button type="button" class="${cls}" ${disabled} data-select-node-index="${nodeIdx}" data-tip="${tip}"><img class="route-node-img" src="${nodeImg}" alt=""><span class="route-node-text">${meta.text}</span></button>`;
         })
         .join("");
-      return `<div class="tower-layer">${layerNodes}</div>`;
+      return `<div class="tower-layer" style="--tower-cols:${cols(layer)}">${layerNodes}</div>`;
     })
     .join("");
   const history = (state.tower.history || []).map((n) => map[n]?.text || n).join(" → ");
-  el("towerRoute").innerHTML = `<div class="tower-route">${html}</div><div class="muted">已走：${history || "尚未推进"}</div>`;
+  el("towerRoute").innerHTML = `<div class="muted tower-route-hint">下宽上窄：从底层出发，沿连线可走的岔路前进；顶层为终点。</div><div class="tower-route tower-route-pyramid">${html}</div><div class="muted">已走：${history || "尚未推进"}</div>`;
 }
 
 function renderActionHints(state) {
@@ -220,8 +400,8 @@ function renderActionHints(state) {
   const phase = getCurrentPhase(state);
   const canOperate = state.runActive && phase.key === "PVE_OPEN";
   const canPickStrategy = canOperate && state.phaseActions.exploreUsed === 0 && state.phaseActions.eventUsed === 0;
-  const layer = state.tower?.route?.[state.tower?.step] || [];
-  const currentNode = layer[Math.max(0, Math.min(layer.length - 1, state.tower?.selectedNode || 0))] || state.tower?.currentNode || "combat";
+  const currentNode = getCurrentTowerNodeType(state);
+  const atShopNode = isTowerShopNodeSelected(state);
   const isCombatNode = ["combat", "elite", "boss"].includes(currentNode);
   const isEventNode = ["event", "shop", "rest"].includes(currentNode);
 
@@ -229,7 +409,7 @@ function renderActionHints(state) {
   el("eventBtn").textContent = `触发事件（剩余${eventLeft}）`;
   el("exploreBtn").disabled = !canOperate || exploreLeft <= 0 || !isCombatNode;
   el("eventBtn").disabled = !canOperate || eventLeft <= 0 || !isEventNode;
-  el("refreshShopBtn").disabled = !canOperate;
+  el("refreshShopBtn").disabled = !canOperate || !atShopNode;
   el("autoArrangeBtn").disabled = !canOperate;
   el("endPhaseBtn").disabled = !canOperate;
   el("strategyStableBtn").disabled = !canPickStrategy;
@@ -266,7 +446,7 @@ function unitVisual(unit, opts = {}) {
   const imgCls = opts.imgClass || "unit-img";
   const fallback = unit?.sprite || unit?.icon || "⚔️";
   if (unit?.image) {
-    return `<span class="unit-visual-wrap"><img class="${imgCls}" src="${unit.image}" alt="${unit?.name || ""}" loading="lazy" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='inline'"><span class="unit-sprite unit-fallback" style="display:none">${fallback}</span></span>`;
+    return `<span class="unit-visual-wrap"><img class="${imgCls}" src="${unit.image}" alt="${unit?.name || ""}" draggable="false" loading="lazy" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='inline'"><span class="unit-sprite unit-fallback" style="display:none">${fallback}</span></span>`;
   }
   return `<span class="unit-sprite">${fallback}</span>`;
 }
@@ -275,7 +455,7 @@ function itemVisual(item, opts = {}) {
   const imgCls = opts.imgClass || "item-img";
   const fallback = item?.icon || item?.tileIcon || "📦";
   if (item?.image) {
-    return `<span class="item-visual-wrap"><img class="${imgCls}" src="${item.image}" alt="${item?.name || ""}" loading="lazy" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='inline'"><span class="item-icon item-fallback" style="display:none">${fallback}</span></span>`;
+    return `<span class="item-visual-wrap"><img class="${imgCls}" src="${item.image}" alt="${item?.name || ""}" draggable="false" loading="lazy" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='inline'"><span class="item-icon item-fallback" style="display:none">${fallback}</span></span>`;
   }
   return `<span class="item-icon">${fallback}</span>`;
 }
@@ -297,6 +477,7 @@ function renderBoard(state) {
         <div class="unit-token has-tip" style="--unit-tint:${tint}" data-tip="${tip}" draggable="true" data-drag-unit-id="${unit?.instanceId}" data-from-board-index="${i}">
           ${visual}
           <span class="unit-tier">T${unit?.tier ?? "?"}</span>
+          <span class="unit-star" aria-hidden="true">${"★".repeat(Math.min(3, unit?.star || 1))}</span>
         </div>
       `;
     } else {
@@ -324,7 +505,7 @@ function renderBackpack(state) {
       const status = item.placed ? "已放置" : "待放置";
       return `
       <div class="stash-item has-tip" data-tip="形状：${item.shape.length}x${item.shape[0].length}\n作用：${item.summary || "构筑加成"}">
-        <div class="stash-item-head" draggable="true" data-drag-item-id="${item.instanceId}">
+        <div class="stash-item-head" data-drag-item-id="${item.instanceId}">
           <div class="stash-item-pic">${itemVisual(item, { imgClass: "item-img stash-item-img" })}</div>
           <div class="stash-item-info">
             <span class="stash-item-name">${item.name}</span>
@@ -401,7 +582,7 @@ function renderRoster(state) {
       <div class="bench-card has-tip" data-tip="拖到棋盘可上阵。作用：${u.role}，羁绊：${u.trait.join("/")}" draggable="true" data-drag-unit-id="${u.instanceId}">
         <div class="card-pic">${unitVisual(u, { imgClass: "unit-img bench-unit-img" })}</div>
         <div class="card-body">
-          <div class="card-title"><strong>${u.name}</strong><span class="card-meta">T${u.tier}</span></div>
+          <div class="card-title"><strong>${u.displayName || u.name}</strong><span class="card-meta">T${u.tier} ${"★".repeat(u.star || 1)}</span></div>
           <div class="card-stats">❤${u.hp} ⚔${u.atk}</div>
         </div>
       </div>
@@ -414,6 +595,7 @@ function renderRoster(state) {
 function renderShops(state) {
   const phase = getCurrentPhase(state);
   const canOperate = state.runActive && phase.key === "PVE_OPEN";
+  const shopActive = canOperate && isTowerShopNodeSelected(state);
   const units = state.shopUnits
     .map((u, idx) => {
       const cost = GAME_CONFIG.shop.unitCostByTier[u.tier] || 3;
@@ -425,7 +607,7 @@ function renderShops(state) {
         <div class="shop-card-body">
           <strong class="shop-card-name">${u.name}</strong>
           <div class="shop-card-meta">T${u.tier} · ❤${u.hp} ⚔${u.atk}</div>
-          <button class="buy-btn" data-buy-unit-index="${idx}" ${canOperate ? "" : "disabled"}>${cost}g 购买</button>
+          <button class="buy-btn" data-buy-unit-index="${idx}" ${shopActive ? "" : "disabled"}>${cost}g 购买</button>
         </div>
       </div>
       `;
@@ -441,7 +623,7 @@ function renderShops(state) {
         <div class="shop-card-body">
           <strong class="shop-card-name">${i.name}</strong>
           <div class="shop-card-meta">${i.rarity}</div>
-          <button class="buy-btn" data-buy-item-index="${idx}" ${canOperate ? "" : "disabled"}>${cost}g 购买</button>
+          <button class="buy-btn" data-buy-item-index="${idx}" ${shopActive ? "" : "disabled"}>${cost}g 购买</button>
         </div>
       </div>
       `;
@@ -516,54 +698,25 @@ function renderBattleOverlay(state) {
   el("battlePauseBtn").textContent = state.battleOverlay.paused ? "继续" : "暂停";
   el("battleSpeedBtn").textContent = `速度 ${state.battleOverlay.speed || 1}x`;
   el("battleReplayBtn").disabled = state.battleOverlay.playing;
-  renderBattleArena(state.battleOverlay);
+  renderBattleArena(
+    state.battleOverlay,
+    !!(state.battleOverlay.playing && !state.battleOverlay.paused)
+  );
 }
 
-let attackFloatTimeoutId = 0;
-
-function renderBattleAttackFloat(overlayState) {
-  const float = el("battleAttackFloat");
-  if (!float) return;
-  const aid = overlayState?.arena?.activeAttackerId || "";
-  const tid = overlayState?.arena?.activeTargetId || "";
-  const playerUnits = overlayState?.arena?.playerUnits || [];
-  const enemyUnits = overlayState?.arena?.enemyUnits || [];
-  const attacker = [...playerUnits, ...enemyUnits].find((u) => u && u.id === aid);
-  const target = [...playerUnits, ...enemyUnits].find((u) => u && u.id === tid);
-
-  if (!attacker || !target) {
-    float.classList.add("hidden");
-    float.classList.remove("attack-active");
-    return;
-  }
-
-  const cell = (u) => {
-    if (u.image) return `<img src="${u.image}" alt="">`;
-    return `<span class="arena-sprite">${u.sprite || "⚔️"}</span>`;
-  };
-  el("attackFloatAttacker").innerHTML = cell(attacker);
-  el("attackFloatTarget").innerHTML = cell(target);
-
-  float.classList.remove("hidden");
-  clearTimeout(attackFloatTimeoutId);
-  float.classList.add("attack-active");
-  attackFloatTimeoutId = setTimeout(() => {
-    float.classList.remove("attack-active");
-    attackFloatTimeoutId = setTimeout(() => {
-      float.classList.add("hidden");
-    }, 150);
-  }, 950);
-}
-
-function renderBattleArena(overlayState) {
+function renderBattleArena(overlayState, playing = false) {
   const arena = el("battleArena");
   const playerUnits = overlayState?.arena?.playerUnits || [];
   const enemyUnits = overlayState?.arena?.enemyUnits || [];
   const activeAttacker = overlayState?.arena?.activeAttackerId || "";
   const activeTarget = overlayState?.arena?.activeTargetId || "";
+  const fromPlayer = overlayState?.arena?.strikeFromPlayerRow !== false;
+  const acol = overlayState?.arena?.activeAttackerCol ?? -1;
+  const tcol = overlayState?.arena?.activeTargetCol ?? -1;
+  const dxCol = acol >= 0 && tcol >= 0 ? tcol - acol : 0;
 
-  const renderUnit = (u, side) => {
-    if (!u) return `<div class="arena-unit ${side} dead"></div>`;
+  const renderUnit = (u, side, colIdx) => {
+    if (!u) return `<div class="arena-unit ${side} dead" data-arena-col="${colIdx}"></div>`;
     const hpPct = Math.max(0, Math.min(100, Math.round((u.hp / u.maxHp) * 100)));
     const cls = [
       "arena-unit",
@@ -574,10 +727,20 @@ function renderBattleArena(overlayState) {
     ]
       .filter(Boolean)
       .join(" ");
+    let strikeAttr = "";
+    if (playing && u.id === activeAttacker && activeTarget && (side === "player" || side === "enemy")) {
+      const isPlayerAtk = side === "player" && fromPlayer;
+      const isEnemyAtk = side === "enemy" && !fromPlayer;
+      if (isPlayerAtk || isEnemyAtk) {
+        strikeAttr = ` style="--dx-col:${dxCol};" data-strike-dir="${isPlayerAtk ? "up" : "down"}"`;
+      }
+    }
+    const hitBadge =
+      playing && u.id === activeTarget ? `<span class="arena-hit-badge" aria-hidden="true">受击</span>` : "";
     const visual = u.image
-      ? `<img class="arena-unit-img" src="${u.image}" alt="">`
+      ? `<img class="arena-unit-img" src="${u.image}" alt="" draggable="false">`
       : `<span class="arena-sprite">${u.sprite || "⚔️"}</span>`;
-    return `<div class="${cls}">${visual}<div class="arena-hp"><i style="width:${hpPct}%"></i></div></div>`;
+    return `<div class="${cls}" data-arena-col="${colIdx}"${strikeAttr}>${hitBadge}${visual}<div class="arena-hp"><i style="width:${hpPct}%"></i></div></div>`;
   };
 
   const padTo7 = (arr) => {
@@ -586,11 +749,11 @@ function renderBattleArena(overlayState) {
     return out.slice(0, 7);
   };
 
-  const enemyHtml = padTo7(enemyUnits).map((u) => renderUnit(u, "enemy")).join("");
-  const playerHtml = padTo7(playerUnits).map((u) => renderUnit(u, "player")).join("");
-  arena.innerHTML = `<div class="arena-row">${enemyHtml}</div><div class="arena-row">${playerHtml}</div>`;
-
-  renderBattleAttackFloat(overlayState);
+  const enemyHtml = padTo7(enemyUnits).map((u, colIdx) => renderUnit(u, "enemy", colIdx)).join("");
+  const playerHtml = padTo7(playerUnits).map((u, colIdx) => renderUnit(u, "player", colIdx)).join("");
+  const playCls = playing && activeAttacker && activeTarget ? " battle-playing-strike" : "";
+  arena.className = `battle-arena${playCls}`;
+  arena.innerHTML = `<div class="arena-row arena-row-enemy">${enemyHtml}</div><div class="arena-row arena-row-player">${playerHtml}</div>`;
 }
 
 function renderTutorial(state) {
@@ -630,19 +793,19 @@ function getTutorialStep(state) {
   const steps = [
     {
       title: "第1步：点击“探索节点”，体验一场PVE战斗。",
-      hint: "探索可以获取金币和秘能，是每层核心收益来源。",
+      hint: "尚无单位时会进入首层教学轻装战；之后请优先在商店补强再上阵。",
       targetButtonId: "exploreBtn",
       done: marks.explored,
     },
     {
-      title: "第2步：点击“购买单位”，补强你的棋盘阵容。",
-      hint: "单位越完整，封盘后的自动战斗胜率越高。",
+      title: "第2步：在路径上点选「商店」节点，再购买单位补强阵容。",
+      hint: "商店仅在选中商店格时出现；第一层第二行左侧格固定连通商店。",
       targetSelector: "[data-buy-unit-index]",
       done: marks.boughtUnit,
     },
     {
-      title: "第3步：点击“购买道具”，构筑背包联动。",
-      hint: "背包道具会提供全局加成和触发效果。",
+      title: "第3步：仍在商店节点时购买一件道具，构筑背包联动。",
+      hint: "背包在右侧「背包」页，与商店分开。",
       targetSelector: "[data-buy-item-index]",
       done: marks.boughtItem,
     },
@@ -653,8 +816,8 @@ function getTutorialStep(state) {
       done: marks.arranged,
     },
     {
-      title: "第5步：点击“结束当前阶段并封盘”。",
-      hint: "当前改为手动结束自由探索，不再强制倒计时。",
+      title: "第5步：点击「结束阶段并封盘」。",
+      hint: "当前为手动结束自由探索，不再强制倒计时。",
       targetButtonId: "endPhaseBtn",
       done: marks.pvpResolved,
     },

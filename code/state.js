@@ -4,6 +4,10 @@ export function createInitialState() {
   return {
     runActive: false,
     runId: "",
+    runMeta: {
+      classId: "",
+      landingId: "",
+    },
     floor: 1,
     phaseIndex: 0,
     phaseTimeLeft: GAME_CONFIG.phases[0].seconds || 0,
@@ -29,7 +33,7 @@ export function createInitialState() {
       suggestion: "",
     },
     ui: {
-      sideTab: "shop", // shop | bag | log
+      sideTab: "bag", // shop | bag | log（商店页仅在路径选中商店节点时出现）
     },
     phaseActions: {
       exploreUsed: 0,
@@ -52,6 +56,7 @@ export function createInitialState() {
       step: 0,
       route: [],
       history: [],
+      pathColumns: [],
       currentNode: null,
       selectedNode: 0,
     },

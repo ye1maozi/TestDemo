@@ -34,14 +34,15 @@
       <div class="hud-card"><span>齿轮</span><strong id="hudGear">0</strong></div>
       <div class="hud-card"><span>秘能</span><strong id="hudMana">0</strong></div>
       <div class="hud-card"><span>存活估计</span><strong id="hudAlive">0</strong></div>
+      <div class="hud-card"><span>职业</span><strong id="hudClass">-</strong></div>
+      <div class="hud-card"><span>落点</span><strong id="hudLanding">-</strong></div>
     </section>
 
     <main class="layout">
       <div class="left-column">
-        <section class="panel status status-compact">
-          <h2>对局状态</h2>
-          <div id="runStatus"></div>
-          <h3>爬塔路径</h3>
+        <section class="panel path-panel">
+          <p class="path-panel-lead muted">数值与资源以顶部状态条为准，此处专注路线与操作。</p>
+          <h2 class="path-panel-title">爬塔路径</h2>
           <div id="towerRoute"></div>
         </section>
         <section class="panel actions actions-compact">
@@ -73,12 +74,12 @@
 
       <section class="panel side">
         <div class="side-tabs">
-          <button id="sideTabShopBtn" class="side-tab active">商店</button>
-          <button id="sideTabBagBtn" class="side-tab">背包</button>
-          <button id="sideTabLogBtn" class="side-tab">日志</button>
+          <button type="button" id="sideTabShopBtn" class="side-tab hidden" hidden>商店</button>
+          <button type="button" id="sideTabBagBtn" class="side-tab active">背包</button>
+          <button type="button" id="sideTabLogBtn" class="side-tab">日志</button>
         </div>
-        <div id="sideShopPanel" class="side-panel">
-          <h2>单位与商店</h2>
+        <div id="sideShopPanel" class="side-panel hidden">
+          <h2>商店</h2>
           <div class="shop-actions">
             <button id="refreshShopBtn" disabled>刷新商店</button>
           </div>
@@ -87,7 +88,7 @@
           <h3>商店道具</h3>
           <div id="shopItems"></div>
         </div>
-        <div id="sideBagPanel" class="side-panel hidden">
+        <div id="sideBagPanel" class="side-panel">
           <h2>背包（10x6）</h2>
           <button id="autoArrangeBtn" disabled>整理背包并放入格子</button>
           <div id="backpackStats"></div>
@@ -102,6 +103,25 @@
         </div>
       </section>
     </main>
+
+    <div id="preRunModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="preRunTitle">
+      <div class="modal-card pre-run-modal">
+        <h2 id="preRunTitle">开局筹备</h2>
+        <p class="muted pre-run-lead">选择职业影响商店棋子权重；落点决定初始资源倾向。</p>
+        <div class="pre-run-section">
+          <h3>职业</h3>
+          <div id="preRunClassOptions" class="pre-run-grid"></div>
+        </div>
+        <div class="pre-run-section">
+          <h3>落点</h3>
+          <div id="preRunLandingOptions" class="pre-run-grid"></div>
+        </div>
+        <div class="pre-run-actions">
+          <button type="button" id="preRunCancelBtn" class="ghost-btn">取消</button>
+          <button type="button" id="preRunConfirmBtn">进入对局</button>
+        </div>
+      </div>
+    </div>
 
     <section id="tutorialOverlay" class="tutorial-overlay hidden">
       <div class="tutorial-card">
@@ -144,14 +164,6 @@
           </div>
         </div>
         <div id="battleArena" class="battle-arena"></div>
-        <div id="battleAttackFloat" class="battle-attack-float hidden" aria-hidden="true">
-          <div class="attack-float-inner">
-            <div class="attack-attacker" id="attackFloatAttacker"></div>
-            <div class="attack-arrow">→</div>
-            <div class="attack-target" id="attackFloatTarget"></div>
-            <div class="attack-hit-effect" id="attackHitEffect"></div>
-          </div>
-        </div>
         <div id="battleTrack" class="battle-track"></div>
         <div id="battleTimeline" class="battle-timeline"></div>
         <div id="battleResult" class="battle-result"></div>

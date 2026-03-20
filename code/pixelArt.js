@@ -259,8 +259,23 @@ const ITEM_PIXELS = {
   ],
 };
 
+/** 新单位复用相近剪影，避免重复维护大矩阵 */
+const UNIT_PIXEL_ALIAS = {
+  u_pawn: "u_guard",
+  u_acolyte: "u_mage",
+  u_sapper: "u_mech",
+  u_skirmisher: "u_archer",
+  u_bulwark: "u_guard",
+  u_warlock: "u_mage",
+  u_drone: "u_mech",
+  u_reaper: "u_assassin",
+  u_leviathan: "u_titan",
+  u_sovereign: "u_mage",
+};
+
 export function getUnitPixelArt(unitId, tint = "#7fc7ff") {
-  const grid = UNIT_PIXELS[unitId];
+  const key = UNIT_PIXEL_ALIAS[unitId] || unitId;
+  const grid = UNIT_PIXELS[key];
   if (!grid) return null;
   return svgDataUrl(grid, tint);
 }
